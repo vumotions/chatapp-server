@@ -3,6 +3,7 @@ import http from 'http'
 import { Server } from 'socket.io'
 import db from './utils/db'
 import UserModel from './models/User.model'
+import authRoutes from './routes/user.routes'
 
 // Connect to database
 db.connect()
@@ -32,6 +33,9 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Vu Motions Test!')
 })
 
-app.listen(port, () => {
+// Auth routes
+app.use('/auth', authRoutes)
+
+server.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`)
 })

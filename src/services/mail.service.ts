@@ -1,8 +1,7 @@
+import handlebars from 'handlebars'
 import nodemailer from 'nodemailer'
 import { env } from '~/config/env'
-import { SendEmailDTO } from '~/types/mail'
-import hbs from 'nodemailer-express-handlebars'
-import handlebars from 'handlebars'
+import { SendEmailDTO } from '~/types/mail.types'
 
 import path from 'path'
 type MailServiceConfig = {
@@ -62,9 +61,10 @@ class MailService {
   }
 }
 
-const mailer = new MailService({
+const mailService = new MailService({
   user: env.MAIL_AUTH_USER,
   pass: env.MAIL_AUTH_PASS
 })
-mailer.initialize()
-export default mailer
+
+mailService.initialize()
+export default mailService

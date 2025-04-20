@@ -1,26 +1,11 @@
 import { Router } from 'express'
-import mailer from '~/services/mail.services'
+import userController from '~/controllers/user.controller'
+import { wrapRequestHandler } from '~/helpers/common'
+import { registerValidator } from '~/middlewares/user.middleware'
 
 const authRoutes = Router()
 
-authRoutes.post('/login', async (req, res) => {
-  const { email } = req.body as { email: string }
-
-  await mailer.sendMail({
-    subject: 'OTP Verification',
-    to: email || 'leevudev@gmail.com',
-    template: 'otp',
-    context: {
-      title: 'OTP Verification',
-      expiresIn: `${60} seconds`,
-      otp: '123456'
-    }
-  })
-
-  res.json({
-    message: 'Login successful',
-    user: req.body
-  })
-})
+authRoutes.post('/register', registerValidator, wrapRequestHandler(userController.register))
+authRoutes.post('/login', wrapRequestHandler(userController.login))
 
 export default authRoutes

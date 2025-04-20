@@ -5,5 +5,7 @@ export type SendEmailDTO = {
   to: string | string[] | Address | Address[]
   subject: string
   template: string
-  [key: string]: any
+  context: {
+    [key: string]: any
+  }
 }

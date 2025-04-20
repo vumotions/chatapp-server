@@ -1,27 +1,64 @@
-import { model, Schema, Types } from 'mongoose'
+import { Schema, model, Document, Types } from 'mongoose'
+import { ObjectId } from 'mongodb'
 
-const viewConfigSchema = new Schema(
+interface IViewConfig extends Document {
+  whoCanSee: string
+  whoCanFind: string
+}
+
+interface IPrivacySettings extends Document {
+  phoneNumber: IViewConfig
+  lastSeenOnline: IViewConfig
+  profilePicture: IViewConfig
+  bio: IViewConfig
+  dateOfBirth: IViewConfig
+}
+
+interface ISecuritySettings extends Document {
+  blockedUsers: ObjectId[]
+  activeSessions: string[]
+}
+
+export interface IUser extends Document {
+  username: string
+  email: string
+  passwordHash: string
+  profilePicture?: string
+  name?: string
+  bio?: string
+  phoneNumber?: string
+  dateOfBirth?: Date
+  verify: string
+  isBot: boolean
+  apiKey?: string
+  createdBy: ObjectId | null
+  privacySettings: IPrivacySettings
+  securitySettings: ISecuritySettings
+  emailLockedUntil: Date | null
+}
+
+const VISIBILITY = ['EVERYONE', 'CONTACTS', 'NOBODY'] as const
+const VERIFICATION_STATUS = ['UNVERIFIED', 'VERIFIED'] as const
+
+const viewConfigSchema = new Schema<IViewConfig>(
   {
     whoCanSee: {
       type: String,
-      enum: ['everyone', 'contacts', 'nobody'],
-      default: 'everyone'
+      enum: VISIBILITY,
+      default: 'EVERYONE'
     },
     whoCanFind: {
       type: String,
-      enum: ['everyone', 'contacts', 'nobody'],
-      default: 'everyone'
+      enum: VISIBILITY,
+      default: 'EVERYONE'
     }
   },
   { _id: false }
 )
 
-const privacySettingsSchema = new Schema(
+const privacySettingsSchema = new Schema<IPrivacySettings>(
   {
-    phoneNumber: {
-      whoCanSee: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' },
-      whoCanFind: { type: String, enum: ['everyone', 'contacts', 'nobody'], default: 'everyone' }
-    },
+    phoneNumber: viewConfigSchema,
     lastSeenOnline: viewConfigSchema,
     profilePicture: viewConfigSchema,
     bio: viewConfigSchema,
@@ -30,33 +67,79 @@ const privacySettingsSchema = new Schema(
   { _id: false }
 )
 
-const securitySettingsSchema = new Schema(
+const securitySettingsSchema = new Schema<ISecuritySettings>(
   {
-    blockedUsers: [{ type: Types.ObjectId, ref: 'User' }],
-    activeSessions: [{ type: String }]
+    blockedUsers: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    activeSessions: [
+      {
+        type: String
+      }
+    ]
   },
   { _id: false }
 )
 
-const userSchema = new Schema(
+const userSchema = new Schema<IUser>(
   {
-    username: { type: String, required: true, unique: true },
-    email: { type: String, required: true, unique: true },
-    passwordHash: { type: String, required: true },
-    profilePicture: { type: String },
-    name: { type: String },
-    bio: { type: String },
-    phoneNumber: { type: String },
-    dateOfBirth: { type: Date },
-    isBot: { type: Boolean, default: false },
-    apiKey: { type: String },
-    createdBy: { type: Types.ObjectId, ref: 'User' },
+    username: {
+      type: String,
+      unique: true
+    },
+    email: {
+      type: String,
+      required: true
+    },
+    passwordHash: {
+      type: String,
+      required: true
+    },
+    profilePicture: {
+      type: String
+    },
+    name: {
+      type: String
+    },
+    bio: {
+      type: String
+    },
+    phoneNumber: {
+      type: String
+    },
+    dateOfBirth: {
+      type: Date
+    },
+    verify: {
+      type: String,
+      enum: VERIFICATION_STATUS,
+      default: 'UNVERIFIED'
+    },
+    isBot: {
+      type: Boolean,
+      default: false
+    },
+    apiKey: {
+      type: String
+    },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     privacySettings: privacySettingsSchema,
-    securitySettings: securitySettingsSchema
+    securitySettings: securitySettingsSchema,
+    emailLockedUntil: {
+      type: Date,
+      default: null
+    }
   },
   { timestamps: true }
 )
 
-const UserModel = model('User', userSchema)
+const UserModel = model<IUser>('User', userSchema)
 
 export default UserModel

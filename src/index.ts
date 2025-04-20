@@ -1,40 +1,28 @@
-import express, { Request, Response } from 'express'
+import cors from 'cors'
+import express from 'express'
+import helmet from 'helmet'
 import http from 'http'
-import { Server } from 'socket.io'
-import db from './utils/db'
-import UserModel from './models/User.model'
+import database from './lib/database'
+import initSocket from './lib/socket'
+import defaultErrorHandler from './middlewares/global.middleware'
 import authRoutes from './routes/user.routes'
 
 // Connect to database
-db.connect()
-const app = express()
+database.connect()
+
 const port = process.env.PORT || 4000
+
+const app = express()
 app.use(express.json())
+app.use(helmet())
+app.use(cors())
 
 const server = http.createServer(app)
-const io = new Server(server)
 
-const users = new Map<string, string>()
-const rooms = new Map<string, Set<string>>()
-const calls = new Map<
-  string,
-  {
-    host: string
-    participants: Set<string>
-    type: '1-1' | 'group'
-  }
->()
-
-io.on('connection', (socket) => {
-  console.log('a user connected', { socket })
-})
-
-app.get('/', (req: Request, res: Response) => {
-  res.send('Vu Motions Test!')
-})
-
-// Auth routes
 app.use('/auth', authRoutes)
+app.use(defaultErrorHandler)
+
+initSocket(server)
 
 server.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`)

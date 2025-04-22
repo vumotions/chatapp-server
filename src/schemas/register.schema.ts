@@ -1,4 +1,5 @@
 import z, { ZodIssueCode } from 'zod'
+import { USER_VERIFY_STATUS } from '~/constants/enums'
 import userService from '~/services/user.service'
 
 export const registerSchema = z
@@ -26,22 +27,16 @@ export const registerSchema = z
     path: ['confirmPassword']
   })
   .superRefine(async (data, ctx) => {
-    const emailExists = await userService.checkEmailExists(data.email)
+    const verify = await userService.getEmailVerificationStatus(data.email)
 
-    if (emailExists) {
+    if (verify && verify === USER_VERIFY_STATUS.VERIFIED) {
       ctx.addIssue({
         path: ['email'],
-        message: 'Email already exists',
+        message: 'Email address already taken. Please use a different one',
         code: ZodIssueCode.custom
       })
     }
+    return z.NEVER
   })
 
 export type RegisterDTO = z.infer<typeof registerSchema>
-
-export const otpSchema = z.object({
-  otp: z
-    .string()
-    .regex(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
-    .transform((val) => parseInt(val, 10)) // Chuyển thành số
-})

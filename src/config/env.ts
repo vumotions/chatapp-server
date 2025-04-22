@@ -8,7 +8,8 @@ const EnvSchema = z.object({
   DB_PASSWORD: z.string().min(1),
   MAIL_AUTH_USER: z.string().min(1),
   MAIL_AUTH_PASS: z.string().min(1),
-  SALT_ROUNDS: z.coerce.number().default(10)
+  PASSWORD_SALT: z.string().min(1),
+  OTP_EXPIRES_AT: z.coerce.number().default(60)
 })
 
 export const env = EnvSchema.parse(process.env)

@@ -1,20 +1,37 @@
 import { generateOTP } from '~/helpers/common'
 import OTPModel from '~/models/otp.model'
-import { IUser } from '~/models/user.model'
+import UserModel, { IUser } from '~/models/user.model'
 import mailService from './mail.service'
+import { env } from '~/config/env'
+import { OTP_STATUS } from '~/constants/enums'
 
 class OTPService {
-  async verifyOTP() {}
+  async verifyOTP({ otp, email }: { otp: number; email: string }) {
+    const record = await OTPModel.findOne({
+      email,
+      code: otp
+    })
 
-  async sendOTP({ user, purpose, expiresAt }: { purpose: string; user: IUser; expiresAt?: Date }) {
+    if (!record) {
+      return OTP_STATUS.INVALID
+    }
+
+    if (record.expiresAt < new Date()) {
+      return OTP_STATUS.EXPIRED
+    }
+
+    return OTP_STATUS.VALID
+  }
+
+  async sendOTP({ user, purpose, expiresIn }: { purpose: string; user: IUser; expiresIn?: number }) {
     const otpCode = generateOTP(6)
-
+    const _expiresIn = expiresIn || env.OTP_EXPIRES_AT
     await Promise.all([
       OTPModel.create({
         code: otpCode,
-        userId: user._id,
+        email: user.email,
         purpose,
-        expiresAt: expiresAt || new Date(Date.now() + 60 * 1000) // 60s
+        expiresAt: new Date(Date.now() + _expiresIn * 1000)
       }),
       mailService.sendMail({
         subject: 'Email verification',
@@ -22,7 +39,7 @@ class OTPService {
         to: user.email,
         context: {
           title: 'OTP Verification',
-          expiresIn: `${60} seconds`,
+          expiresIn: `${_expiresIn} seconds`,
           otp: otpCode
         }
       })

@@ -1,6 +1,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express'
 import otpGenerator from 'otp-generator'
 import slugify from 'slugify'
+import { OTP_STATUS } from '~/constants/enums'
 
 export const generateOTP = (digits: number = 6) => {
   return otpGenerator.generate(digits, {
@@ -9,16 +10,6 @@ export const generateOTP = (digits: number = 6) => {
     digits: true,
     lowerCaseAlphabets: false
   })
-}
-
-export const wrapRequestHandler = (func: RequestHandler): RequestHandler => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      await func(req, res, next)
-    } catch (error) {
-      next(error)
-    }
-  }
 }
 
 export const generateUsername = (fullName: string) => {
@@ -31,4 +22,15 @@ export const generateUsername = (fullName: string) => {
   const suffix = Math.floor(100 + Math.random() * 900)
 
   return `${base}${dateStr}${timeStr}${suffix}`
+}
+
+export const getOTPErrorMessage = (status: OTP_STATUS) => {
+  switch (status) {
+    case OTP_STATUS.INVALID:
+      return 'OTP is invalid'
+    case OTP_STATUS.EXPIRED:
+      return 'OTP has expired'
+    default:
+      return 'OTP is invalid'
+  }
 }

@@ -1,5 +1,6 @@
 import { Schema, model, Document, Types } from 'mongoose'
 import { ObjectId } from 'mongodb'
+import { ACCESS_SCOPE, USER_VERIFY_STATUS } from '~/constants/enums'
 
 interface IViewConfig extends Document {
   whoCanSee: string
@@ -37,20 +38,20 @@ export interface IUser extends Document {
   emailLockedUntil: Date | null
 }
 
-const VISIBILITY = ['EVERYONE', 'CONTACTS', 'NOBODY'] as const
-const VERIFICATION_STATUS = ['UNVERIFIED', 'VERIFIED'] as const
+const VISIBILITY = [ACCESS_SCOPE.CONTACTS, ACCESS_SCOPE.EVERYONE, ACCESS_SCOPE.NOBODY] as const
+const VERIFICATION_STATUS = [USER_VERIFY_STATUS.VERIFIED, USER_VERIFY_STATUS.UNVERIFIED] as const
 
 const viewConfigSchema = new Schema<IViewConfig>(
   {
     whoCanSee: {
       type: String,
       enum: VISIBILITY,
-      default: 'EVERYONE'
+      default: ACCESS_SCOPE.EVERYONE
     },
     whoCanFind: {
       type: String,
       enum: VISIBILITY,
-      default: 'EVERYONE'
+      default: ACCESS_SCOPE.EVERYONE
     }
   },
   { _id: false }
@@ -116,7 +117,7 @@ const userSchema = new Schema<IUser>(
     verify: {
       type: String,
       enum: VERIFICATION_STATUS,
-      default: 'UNVERIFIED'
+      default: USER_VERIFY_STATUS.UNVERIFIED
     },
     isBot: {
       type: Boolean,
@@ -130,8 +131,23 @@ const userSchema = new Schema<IUser>(
       ref: 'User',
       default: null
     },
-    privacySettings: privacySettingsSchema,
-    securitySettings: securitySettingsSchema,
+    privacySettings: {
+      type: privacySettingsSchema,
+      default: {
+        phoneNumber: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
+        lastSeenOnline: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
+        profilePicture: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
+        bio: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
+        dateOfBirth: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE }
+      } as any
+    },
+    securitySettings: {
+      type: securitySettingsSchema,
+      default: {
+        blockedUsers: [],
+        activeSessions: []
+      }
+    },
     emailLockedUntil: {
       type: Date,
       default: null

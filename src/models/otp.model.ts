@@ -1,13 +1,13 @@
 import { Schema, model, Document } from 'mongoose'
 import { ObjectId } from 'mongodb'
+import { OTP_PURPOSE } from '~/constants/enums'
 
 export interface IOTP extends Document {
   code: string
-  userId: ObjectId
+  email: string
   purpose: string
   expiresAt: Date
   createdAt: Date
-  isUsed: boolean
 }
 
 const otpSchema = new Schema<IOTP>({
@@ -15,14 +15,19 @@ const otpSchema = new Schema<IOTP>({
     type: String,
     required: true
   },
-  userId: {
-    type: Schema.Types.ObjectId,
+  email: {
+    type: String,
     required: true,
     ref: 'User'
   },
   purpose: {
     type: String,
-    enum: ['EMAIL_VERIFICATION', 'PASSWORD_RESET'],
+    enum: [
+      OTP_PURPOSE.EMAIL_VERIFICATION,
+      OTP_PURPOSE.PASSWORD_RESET,
+      OTP_PURPOSE.NEW_DEVICE_LOGIN,
+      OTP_PURPOSE.TWO_FACTOR_AUTHENTICATION
+    ],
     required: true
   },
   expiresAt: {
@@ -32,10 +37,6 @@ const otpSchema = new Schema<IOTP>({
   createdAt: {
     type: Date,
     default: Date.now
-  },
-  isUsed: {
-    type: Boolean,
-    default: false
   }
 })
 

@@ -1,6 +1,6 @@
 import { differenceInHours, differenceInMinutes } from 'date-fns'
 import status from 'http-status'
-import z from 'zod'
+import z, { ZodIssueCode } from 'zod'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { hashPassword } from '~/helpers/crypto'
 import { AppError } from '~/models/error.model'
@@ -12,28 +12,30 @@ const rawLoginSchema = z.object({
   password: z.string().min(6, { message: 'Password must be at least 6 characters' })
 })
 
-export const loginSchema = rawLoginSchema.transform(async (data) => {
+export const loginSchema = rawLoginSchema.transform(async (data, ctx) => {
   const user = await UserModel.findOne({
     email: data.email,
     passwordHash: hashPassword(data.password)
   })
 
   if (!user) {
-    throw new AppError({
+    return ctx.addIssue({
       message: 'Email or password is incorrect',
-      status: status.NOT_FOUND
+      code: ZodIssueCode.custom,
+      path: ['email']
     })
   }
 
   if (user.emailLockedUntil) {
     const currentTime = new Date()
     const lockEndTime = user.emailLockedUntil
-    console.log(currentTime, lockEndTime)
+
     if (currentTime < lockEndTime) {
       const remainingTime = differenceInMinutes(lockEndTime, currentTime)
       const remainingHours = differenceInHours(lockEndTime, currentTime)
 
-      const remainingMessage = remainingHours >= 1 ? `${remainingHours} hours` : `${remainingTime} minutes`
+      const remainingMessage =
+        remainingHours >= 1 ? `${remainingHours} hours` : `${remainingTime} minutes`
 
       throw new AppError({
         message: `Your account is temporarily suspended. Please try again after ${remainingMessage}`,
@@ -44,7 +46,8 @@ export const loginSchema = rawLoginSchema.transform(async (data) => {
 
   if (user.verify === USER_VERIFY_STATUS.UNVERIFIED) {
     throw new AppError({
-      message: 'Your account is not verified yet. Please check your inbox to complete the verification process',
+      message:
+        'Your account is not verified yet. Please check your inbox to complete the verification process',
       status: status.FORBIDDEN
     })
   }

@@ -6,7 +6,7 @@ import { env } from '~/config/env'
 import { OTP_STATUS } from '~/constants/enums'
 
 class OTPService {
-  async verifyOTP({ otp, email }: { otp: number; email: string }) {
+  async verifyOTP({ otp, email }: { otp: string; email: string }) {
     const record = await OTPModel.findOne({
       email,
       code: otp
@@ -23,10 +23,18 @@ class OTPService {
     return OTP_STATUS.VALID
   }
 
-  async sendOTP({ user, purpose, expiresIn }: { purpose: string; user: IUser; expiresIn?: number }) {
+  async sendOTP({
+    user,
+    purpose,
+    expiresIn
+  }: {
+    purpose: string
+    user: IUser
+    expiresIn?: number
+  }) {
     const otpCode = generateOTP(6)
     const _expiresIn = expiresIn || env.OTP_EXPIRES_AT
-    await Promise.all([
+    const [otpRecord] = await Promise.all([
       OTPModel.create({
         code: otpCode,
         email: user.email,
@@ -45,7 +53,7 @@ class OTPService {
       })
     ])
 
-    return otpCode
+    return otpRecord
   }
 }
 

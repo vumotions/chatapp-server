@@ -9,7 +9,11 @@ const EnvSchema = z.object({
   MAIL_AUTH_USER: z.string().min(1),
   MAIL_AUTH_PASS: z.string().min(1),
   PASSWORD_SALT: z.string().min(1),
-  OTP_EXPIRES_AT: z.coerce.number().default(60)
+  OTP_EXPIRES_AT: z.coerce.number().default(60),
+  JWT_ACCESS_TOKEN_PRIVATE_KEY: z.string().min(1),
+  JWT_REFRESH_TOKEN_PRIVATE_KEY: z.string().min(1),
+  JWT_ACCESS_TOKEN_EXPIRES_IN: z.string().min(1),
+  JWT_REFRESH_TOKEN_EXPIRES_IN: z.string().min(1)
 })
 
 export const env = EnvSchema.parse(process.env)

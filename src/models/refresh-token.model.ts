@@ -3,8 +3,8 @@ import { ObjectId } from 'mongodb'
 
 export interface IRefreshToken extends Document {
   token: string
-  created_at: Date
-  user_id: ObjectId
+  createdAt: Date
+  userId: ObjectId
 }
 
 const refreshTokenSchema = new Schema<IRefreshToken>({
@@ -12,17 +12,17 @@ const refreshTokenSchema = new Schema<IRefreshToken>({
     type: String,
     required: true
   },
-  created_at: {
+  createdAt: {
     type: Date,
     default: Date.now
   },
-  user_id: {
+  userId: {
     type: Schema.Types.ObjectId,
     required: true,
     ref: 'User'
   }
 })
 
-const RefreshToken = model<IRefreshToken>('RefreshToken', refreshTokenSchema)
+const RefreshTokenModel = model<IRefreshToken>('RefreshToken', refreshTokenSchema)
 
-export default RefreshToken
+export default RefreshTokenModel

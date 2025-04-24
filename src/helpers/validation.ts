@@ -10,7 +10,11 @@ interface RequestSchemas {
   headers?: ZodType<any>
 }
 
-const assignContextIfTransformContext = (result: any, req: Request, field: keyof RequestSchemas) => {
+const assignContextIfTransformContext = (
+  result: any,
+  req: Request,
+  field: keyof RequestSchemas
+) => {
   if (result instanceof TransformContext) {
     req[field] = result.data
     req.context = result.context
@@ -22,17 +26,17 @@ const assignContextIfTransformContext = (result: any, req: Request, field: keyof
 const validate = (schemas: RequestSchemas) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const schemasToValidate: { field: keyof RequestSchemas; schema?: ZodType<any>; data: any }[] = [
-        { field: 'body', schema: schemas?.body, data: req?.body },
-        { field: 'query', schema: schemas?.query, data: req?.query },
-        { field: 'params', schema: schemas?.params, data: req?.params },
-        { field: 'headers', schema: schemas?.headers, data: req?.headers }
-      ]
+      const schemasToValidate: { field: keyof RequestSchemas; schema?: ZodType<any>; data: any }[] =
+        [
+          { field: 'body', schema: schemas?.body, data: req?.body },
+          { field: 'query', schema: schemas?.query, data: req?.query },
+          { field: 'params', schema: schemas?.params, data: req?.params },
+          { field: 'headers', schema: schemas?.headers, data: req?.headers }
+        ]
 
       const validatePromises = schemasToValidate.map(({ field, schema, data }) => {
         if (schema) {
           return schema.parseAsync(data).then((result) => {
-            console.log({ result })
             assignContextIfTransformContext(result, req, field)
           })
         }
@@ -43,7 +47,9 @@ const validate = (schemas: RequestSchemas) => {
       return next()
     } catch (error) {
       if (error instanceof ZodError) {
-        const errors: ValidationErrors = Object.fromEntries(error.errors.map((err) => [err.path.join('.'), err]))
+        const errors: ValidationErrors = Object.fromEntries(
+          error.errors.map((err) => [err.path.join('.'), err])
+        )
         return next(new UnprocessableEntityError({ errors }))
       }
 

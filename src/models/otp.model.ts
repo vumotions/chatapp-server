@@ -6,6 +6,7 @@ export interface IOTP extends Document {
   code: string
   email: string
   purpose: string
+  verify: boolean
   expiresAt: Date
   createdAt: Date
 }
@@ -25,10 +26,16 @@ const otpSchema = new Schema<IOTP>({
     enum: [
       OTP_PURPOSE.EMAIL_VERIFICATION,
       OTP_PURPOSE.PASSWORD_RESET,
+      OTP_PURPOSE.FORGOT_PASSWORD,
       OTP_PURPOSE.NEW_DEVICE_LOGIN,
       OTP_PURPOSE.TWO_FACTOR_AUTHENTICATION
     ],
     required: true
+  },
+  verify: {
+    type: Boolean,
+    required: true,
+    default: false
   },
   expiresAt: {
     type: Date,

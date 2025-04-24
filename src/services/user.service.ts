@@ -1,14 +1,79 @@
 import { pick } from 'lodash'
-import { OTP_PURPOSE } from '~/constants/enums'
+import { env } from '~/config/env'
+import { OTP_PURPOSE, TOKEN_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import { generateUsername } from '~/helpers/common'
-import UserModel from '~/models/user.model'
-import { RegisterDTO } from '~/schemas/register.schema'
-import otpService from './otp.service'
 import { hashPassword } from '~/helpers/crypto'
-import { LoginDTO } from '~/schemas/login.schemas'
+import OTPModel from '~/models/otp.model'
+import RefreshTokenModel from '~/models/refresh-token.model'
+import UserModel, { IUser } from '~/models/user.model'
+import { RegisterDTO } from '~/schemas/register.schema'
+import { UserIdentity } from '~/types/common.type'
+import jwtService from './jwt.service'
+import otpService from './otp.service'
 
 class UserService {
-  async login(body: LoginDTO) {}
+  async signAccessToken({ userId, verify }: UserIdentity) {
+    return jwtService.signToken({
+      payload: {
+        userId,
+        tokenType: TOKEN_TYPE.ACCESS_TOKEN,
+        verify
+      },
+      privateKey: env.JWT_ACCESS_TOKEN_PRIVATE_KEY,
+      options: {
+        expiresIn: env.JWT_ACCESS_TOKEN_EXPIRES_IN as any
+      }
+    })
+  }
+
+  async signRefreshToken({ userId, verify }: UserIdentity) {
+    return jwtService.signToken({
+      payload: {
+        userId,
+        tokenType: TOKEN_TYPE.REFRESH_TOKEN,
+        verify
+      },
+      privateKey: env.JWT_REFRESH_TOKEN_PRIVATE_KEY,
+      options: {
+        expiresIn: env.JWT_REFRESH_TOKEN_EXPIRES_IN as any
+      }
+    })
+  }
+
+  async signAccessAndRefreshTokens(payload: UserIdentity) {
+    const [accessToken, refreshToken] = await Promise.all([
+      this.signAccessToken(payload),
+      this.signRefreshToken(payload)
+    ])
+    return { accessToken, refreshToken }
+  }
+
+  async refreshToken({ refreshToken, ...identity }: { refreshToken: string } & UserIdentity) {
+    const [tokens] = await Promise.all([
+      this.signAccessAndRefreshTokens(identity),
+      RefreshTokenModel.deleteOne({
+        token: refreshToken
+      })
+    ])
+
+    await RefreshTokenModel.create({
+      userId: identity.userId,
+      token: tokens.refreshToken
+    })
+
+    return tokens
+  }
+
+  async login(payload: UserIdentity) {
+    const { accessToken, refreshToken } = await this.signAccessAndRefreshTokens(payload)
+
+    await RefreshTokenModel.create({
+      userId: payload.userId,
+      token: refreshToken
+    })
+
+    return { accessToken, refreshToken }
+  }
   async register(body: RegisterDTO) {
     let user = await this.getUserByEmail(body.email)
 
@@ -24,12 +89,18 @@ class UserService {
       })
     }
 
-    await otpService.sendOTP({
+    const otpRecord = await otpService.sendOTP({
       purpose: OTP_PURPOSE.EMAIL_VERIFICATION,
       user
     })
 
-    return user
+    return { user, otpExpiresAt: otpRecord.expiresAt }
+  }
+
+  async logout({ refreshToken }: { refreshToken: string }) {
+    return await RefreshTokenModel.deleteOne({
+      token: refreshToken
+    })
   }
 
   async getUserByEmail(email: string) {
@@ -41,10 +112,70 @@ class UserService {
       _id: id
     })
   }
+
   async getEmailVerificationStatus(email: string) {
     const user = await this.getUserByEmail(email)
     if (!user) return null
     return user.verify
+  }
+
+  async requestEmailVerification(user: IUser) {
+    return await otpService.sendOTP({
+      purpose: OTP_PURPOSE.EMAIL_VERIFICATION,
+      user
+    })
+  }
+
+  async confirmEmailVerification(userId: string) {
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      {
+        verify: USER_VERIFY_STATUS.VERIFIED
+      },
+      { new: true }
+    )
+
+    await OTPModel.deleteOne({
+      email: user?.email,
+      purpose: OTP_PURPOSE.EMAIL_VERIFICATION
+    })
+
+    return user
+  }
+
+  async requestResetPassword(user: IUser) {
+    const otpRecord = await otpService.sendOTP({
+      purpose: OTP_PURPOSE.FORGOT_PASSWORD,
+      user
+    })
+    return otpRecord
+  }
+
+  async confirmResetPassword({ email, otp }: { otp: string; email: string }) {
+    await OTPModel.findOneAndUpdate(
+      {
+        code: otp,
+        email,
+        purpose: OTP_PURPOSE.FORGOT_PASSWORD
+      },
+      {
+        verify: true
+      }
+    )
+  }
+
+  async resetPassword({ email, password }: { email: string; password: string }) {
+    const user = await UserModel.findOneAndUpdate(
+      { email },
+      {
+        passwordHash: hashPassword(password)
+      }
+    )
+
+    await OTPModel.deleteOne({
+      email: user?.email,
+      purpose: OTP_PURPOSE.FORGOT_PASSWORD
+    })
   }
 }
 

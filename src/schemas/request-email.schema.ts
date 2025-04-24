@@ -1,15 +1,11 @@
 import status from 'http-status'
-import z from 'zod'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { AppError } from '~/models/error.model'
 import { TransformContext } from '~/models/transform-context.model'
 import userService from '~/services/user.service'
+import { requestEmailOtpSchema } from './common.schema'
 
-const rawRequestEmailSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address' })
-})
-
-export const requestEmailSchema = rawRequestEmailSchema.transform(async (data) => {
+export const requestEmailSchema = requestEmailOtpSchema.transform(async (data) => {
   const user = await userService.getUserByEmail(data.email)
   if (!user) {
     throw new AppError({
@@ -32,5 +28,3 @@ export const requestEmailSchema = rawRequestEmailSchema.transform(async (data) =
     }
   })
 })
-
-export type RequestEmailDTO = z.infer<typeof rawRequestEmailSchema>

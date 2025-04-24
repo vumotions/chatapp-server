@@ -6,17 +6,13 @@ import { AppError } from '~/models/error.model'
 import { TransformContext } from '~/models/transform-context.model'
 import otpService from '~/services/otp.service'
 import userService from '~/services/user.service'
+import { confirmEmailOtpSchema } from './common.schema'
 
-const rawConfirmEmailSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address' }),
-  otp: z
-    .string()
-    .regex(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
-    .transform((val) => parseInt(val, 10))
-})
-
-export const confirmEmailSchema = rawConfirmEmailSchema.transform(async (data, ctx) => {
-  const [otpStatus, user] = await Promise.all([otpService.verifyOTP(data), userService.getUserByEmail(data.email)])
+export const confirmEmailSchema = confirmEmailOtpSchema.transform(async (data, ctx) => {
+  const [otpStatus, user] = await Promise.all([
+    otpService.verifyOTP(data),
+    userService.getUserByEmail(data.email)
+  ])
   if (!user) {
     throw new AppError({
       message: 'User not found',
@@ -33,7 +29,7 @@ export const confirmEmailSchema = rawConfirmEmailSchema.transform(async (data, c
 
   if (otpStatus !== OTP_STATUS.VALID) {
     const message = getOTPErrorMessage(otpStatus)
-    ctx.addIssue({
+    return ctx.addIssue({
       code: ZodIssueCode.custom,
       path: ['otp'],
       message
@@ -47,5 +43,3 @@ export const confirmEmailSchema = rawConfirmEmailSchema.transform(async (data, c
     }
   })
 })
-
-export type ConfirmEmailDTO = z.infer<typeof rawConfirmEmailSchema>

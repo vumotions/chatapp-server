@@ -1,7 +1,7 @@
 import handlebars from 'handlebars'
 import nodemailer from 'nodemailer'
 import { env } from '~/config/env'
-import { SendEmailDTO } from '~/types/mail.types'
+import { SendEmailDTO } from '~/types/mail.type'
 
 import path from 'path'
 type MailServiceConfig = {

@@ -17,7 +17,8 @@ export const generateUsername = (fullName: string) => {
 
   const now = new Date()
   const dateStr = now.toISOString().slice(2, 10).replace(/-/g, '')
-  const timeStr = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0')
+  const timeStr =
+    now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0')
 
   const suffix = Math.floor(100 + Math.random() * 900)
 

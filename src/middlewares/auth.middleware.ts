@@ -1,4 +1,5 @@
 import validate from '~/helpers/validation'
+import { accessTokenSchema } from '~/schemas/access-token.schema'
 import { confirmEmailSchema } from '~/schemas/confirm-email.schema'
 import { confirmResetPasswordSchema } from '~/schemas/confirm-reset-password.schema'
 import { loginSchema } from '~/schemas/login.schemas'
@@ -14,6 +15,10 @@ export const registerValidator = validate({
 
 export const loginValidator = validate({
   body: loginSchema
+})
+
+export const accessTokenValidator = validate({
+  headers: accessTokenSchema
 })
 
 export const requestEmailValidator = validate({

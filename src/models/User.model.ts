@@ -1,24 +1,6 @@
-import { Schema, model, Document, Types } from 'mongoose'
 import { ObjectId } from 'mongodb'
-import { ACCESS_SCOPE, USER_VERIFY_STATUS } from '~/constants/enums'
-
-interface IViewConfig extends Document {
-  whoCanSee: string
-  whoCanFind: string
-}
-
-interface IPrivacySettings extends Document {
-  phoneNumber: IViewConfig
-  lastSeenOnline: IViewConfig
-  profilePicture: IViewConfig
-  bio: IViewConfig
-  dateOfBirth: IViewConfig
-}
-
-interface ISecuritySettings extends Document {
-  blockedUsers: ObjectId[]
-  activeSessions: string[]
-}
+import { Document, Schema, model } from 'mongoose'
+import { USER_VERIFY_STATUS } from '~/constants/enums'
 
 export interface IUser extends Document {
   username: string
@@ -33,57 +15,10 @@ export interface IUser extends Document {
   isBot: boolean
   apiKey?: string
   createdBy: ObjectId | null
-  privacySettings: IPrivacySettings
-  securitySettings: ISecuritySettings
   emailLockedUntil: Date | null
 }
 
-const VISIBILITY = [ACCESS_SCOPE.CONTACTS, ACCESS_SCOPE.EVERYONE, ACCESS_SCOPE.NOBODY] as const
 const VERIFICATION_STATUS = [USER_VERIFY_STATUS.VERIFIED, USER_VERIFY_STATUS.UNVERIFIED] as const
-
-const viewConfigSchema = new Schema<IViewConfig>(
-  {
-    whoCanSee: {
-      type: String,
-      enum: VISIBILITY,
-      default: ACCESS_SCOPE.EVERYONE
-    },
-    whoCanFind: {
-      type: String,
-      enum: VISIBILITY,
-      default: ACCESS_SCOPE.EVERYONE
-    }
-  },
-  { _id: false }
-)
-
-const privacySettingsSchema = new Schema<IPrivacySettings>(
-  {
-    phoneNumber: viewConfigSchema,
-    lastSeenOnline: viewConfigSchema,
-    profilePicture: viewConfigSchema,
-    bio: viewConfigSchema,
-    dateOfBirth: viewConfigSchema
-  },
-  { _id: false }
-)
-
-const securitySettingsSchema = new Schema<ISecuritySettings>(
-  {
-    blockedUsers: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: 'User'
-      }
-    ],
-    activeSessions: [
-      {
-        type: String
-      }
-    ]
-  },
-  { _id: false }
-)
 
 const userSchema = new Schema<IUser>(
   {
@@ -130,23 +65,6 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       default: null
-    },
-    privacySettings: {
-      type: privacySettingsSchema,
-      default: {
-        phoneNumber: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        lastSeenOnline: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        profilePicture: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        bio: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        dateOfBirth: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE }
-      } as any
-    },
-    securitySettings: {
-      type: securitySettingsSchema,
-      default: {
-        blockedUsers: [],
-        activeSessions: []
-      }
     },
     emailLockedUntil: {
       type: Date,

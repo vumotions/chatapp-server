@@ -1,6 +1,3 @@
-const messages = {
-  UNPROCESSABLE_ENTITY: 'Unprocessable Entity',
-  INTERNAL_SERVER_ERROR: 'Internal Server Error'
-}
+const messages = {}
 
 export default messages

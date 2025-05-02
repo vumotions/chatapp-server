@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import userController from '~/controllers/user.controller'
+import userController from '~/controllers/auth.controller'
 import { wrapRequestHandler } from '~/helpers/handler'
 
 import {
@@ -11,7 +11,7 @@ import {
   requestEmailValidator,
   requestResetPasswordValidator,
   resetPasswordValidator
-} from '~/middlewares/user.middleware'
+} from '~/middlewares/auth.middleware'
 
 const authRoutes = Router()
 
@@ -38,19 +38,7 @@ authRoutes.post(
 )
 
 authRoutes.post(
-  '/email/verify/resend',
-  requestEmailValidator,
-  wrapRequestHandler(userController.requestEmailVerification)
-)
-
-authRoutes.post(
   '/request-reset-password',
-  requestResetPasswordValidator,
-  wrapRequestHandler(userController.requestResetPassword)
-)
-
-authRoutes.post(
-  '/resend-request-reset-password',
   requestResetPasswordValidator,
   wrapRequestHandler(userController.requestResetPassword)
 )

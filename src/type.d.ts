@@ -6,6 +6,7 @@ declare global {
     interface Request {
       context?: {
         user?: IUser
+        decodedAccessToken?: TokenPayload
         decodedRefreshToken?: TokenPayload
       }
     }

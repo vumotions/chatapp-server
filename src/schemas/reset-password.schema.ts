@@ -17,7 +17,7 @@ const rawResetPasswordSchema = z
     path: ['confirmPassword']
   })
 
-export const resetPasswordSchema = rawResetPasswordSchema.transform(async (data, ctx) => {
+export const resetPasswordSchema = rawResetPasswordSchema.transform(async (data) => {
   const otpRecord = await OTPModel.findOne({
     email: data.email,
     purpose: OTP_PURPOSE.FORGOT_PASSWORD
@@ -26,7 +26,8 @@ export const resetPasswordSchema = rawResetPasswordSchema.transform(async (data,
   if (!otpRecord || (otpRecord && !otpRecord.verify)) {
     throw new AppError({
       message: 'An error occurred. Please try resending the OTP',
-      status: status.BAD_REQUEST
+      status: status.BAD_REQUEST,
+      name: 'RESET_PASSWORD_ERROR'
     })
   }
 

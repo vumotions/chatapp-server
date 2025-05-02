@@ -1,5 +1,6 @@
 import { differenceInHours, differenceInMinutes } from 'date-fns'
 import status from 'http-status'
+import { omit } from 'lodash'
 import z, { ZodIssueCode } from 'zod'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { hashPassword } from '~/helpers/crypto'
@@ -39,7 +40,8 @@ export const loginSchema = rawLoginSchema.transform(async (data, ctx) => {
 
       throw new AppError({
         message: `Your account is temporarily suspended. Please try again after ${remainingMessage}`,
-        status: status.FORBIDDEN
+        status: status.FORBIDDEN,
+        name: 'ACCOUNT_SUSPENDED_ERROR'
       })
     }
   }
@@ -48,13 +50,14 @@ export const loginSchema = rawLoginSchema.transform(async (data, ctx) => {
     throw new AppError({
       message:
         'Your account is not verified yet. Please check your inbox to complete the verification process',
-      status: status.FORBIDDEN
+      status: status.FORBIDDEN,
+      name: 'UNVERIFIED_ACCOUNT_ERROR'
     })
   }
   return new TransformContext({
     data,
     context: {
-      user
+      user: omit(user.toObject(), ['passwordHash'])
     }
   })
 })

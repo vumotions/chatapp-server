@@ -15,7 +15,7 @@ if (!global.mongoose) {
 }
 
 class Database {
-  private readonly uri: string = `mongodb+srv://${env.DB_USERNAME}:${env.DB_PASSWORD}@teleface-dev.dpnhmv0.mongodb.net/?retryWrites=true&w=majority&appName=teleface-dev`
+  private readonly uri: string = `mongodb+srv://${env.DB_USERNAME}:${env.DB_PASSWORD}@teleface-dev.dpnhmv0.mongodb.net/development?retryWrites=true&w=majority&appName=teleface-dev`
   private cached: CachedConnection
 
   constructor() {

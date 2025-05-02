@@ -1,7 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
 import status from 'http-status'
 import { omit } from 'lodash'
-import messages from '~/constants/messages'
 import { AppError } from '~/models/error.model'
 
 const defaultErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
@@ -17,7 +16,7 @@ const defaultErrorHandler = (err: any, req: Request, res: Response, next: NextFu
   })
 
   res.status(status.INTERNAL_SERVER_ERROR).json({
-    message: err?.message || messages.INTERNAL_SERVER_ERROR
+    message: err?.message || status['500_NAME']
   })
 }
 

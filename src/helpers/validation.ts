@@ -17,7 +17,10 @@ const assignContextIfTransformContext = (
 ) => {
   if (result instanceof TransformContext) {
     req[field] = result.data
-    req.context = result.context
+    req.context = {
+      ...req.context,
+      ...result.context
+    }
   } else {
     req[field] = result
   }

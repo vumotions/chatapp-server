@@ -13,7 +13,8 @@ export default [
       prettier: eslintPluginPrettier
     },
     rules: {
-      'prettier/prettier': 'error'
+      'prettier/prettier': 'error',
+      '@typescript-eslint/no-explicit-any': 'warn'
     }
   }
 ]

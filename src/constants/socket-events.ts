@@ -1,0 +1,5 @@
+const SOCKET_EVENTS = {
+  SEND_MESSAGE: 'SEND_MESSAGE'
+}
+
+export default SOCKET_EVENTS

@@ -14,34 +14,43 @@ export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data, c
   const { refreshToken } = data
   if (!refreshToken) {
     throw new AppError({
-      message: 'Refresh token is required',
-      status: status.UNAUTHORIZED
+      message: 'Refresh token is invalid',
+      status: status.UNAUTHORIZED,
+      name: 'INVALID_REFRESH_TOKEN_ERROR'
     })
   }
 
-  const [decodedRefreshToken, foundRefreshToken] = await Promise.all([
-    jwtService.verifyToken({
-      token: refreshToken,
-      secretOrPublicKey: env.JWT_REFRESH_TOKEN_PRIVATE_KEY
-    }),
-    RefreshTokenModel.findOne({
-      token: refreshToken
-    })
-  ])
+  try {
+    const [decodedRefreshToken, foundRefreshToken] = await Promise.all([
+      jwtService.verifyToken({
+        token: refreshToken,
+        secretOrPublicKey: env.JWT_REFRESH_TOKEN_PRIVATE_KEY
+      }),
+      RefreshTokenModel.findOne({
+        token: refreshToken
+      })
+    ])
 
-  if (!foundRefreshToken) {
-    throw new AppError({
-      message: 'Refresh token does not exist',
-      status: status.UNAUTHORIZED
-    })
-  }
-
-  return new TransformContext({
-    data,
-    context: {
-      decodedRefreshToken
+    if (!foundRefreshToken) {
+      throw new AppError({
+        message: 'Refresh token does not exist',
+        status: status.UNAUTHORIZED
+      })
     }
-  })
+
+    return new TransformContext({
+      data,
+      context: {
+        decodedRefreshToken
+      }
+    })
+  } catch (error) {
+    throw new AppError({
+      message: 'Invalid or expired refresh token',
+      status: status.UNAUTHORIZED,
+      name: 'REFRESH_TOKEN_EXPIRED_ERROR'
+    })
+  }
 })
 
 export type RefreshTokenDTO = z.infer<typeof rawRefreshTokenSchema>

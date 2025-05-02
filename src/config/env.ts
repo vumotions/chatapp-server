@@ -13,7 +13,8 @@ const EnvSchema = z.object({
   JWT_ACCESS_TOKEN_PRIVATE_KEY: z.string().min(1),
   JWT_REFRESH_TOKEN_PRIVATE_KEY: z.string().min(1),
   JWT_ACCESS_TOKEN_EXPIRES_IN: z.string().min(1),
-  JWT_REFRESH_TOKEN_EXPIRES_IN: z.string().min(1)
+  JWT_REFRESH_TOKEN_EXPIRES_IN: z.string().min(1),
+  WEBSITE_URL: z.string().min(1)
 })
 
 export const env = EnvSchema.parse(process.env)

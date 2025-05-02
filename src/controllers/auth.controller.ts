@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express'
+import { omit } from 'lodash'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { AppSuccess } from '~/models/success.model'
 import { IUser } from '~/models/user.model'
@@ -78,7 +79,7 @@ class UsersController {
     res.json(
       new AppSuccess({
         message: 'Your email has been verified successfully',
-        data: updatedUser
+        data: omit(updatedUser?.toObject(), ['passwordHash'])
       })
     )
   }

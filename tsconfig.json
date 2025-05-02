@@ -13,6 +13,6 @@
       }
     },
     "files": ["src/type.d.ts"],
-    "include": ["src/**/*"]
+    "include": ["src/**/*", "src/models/user.model.ts"]
   }
   

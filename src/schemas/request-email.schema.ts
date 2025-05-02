@@ -17,7 +17,8 @@ export const requestEmailSchema = requestEmailOtpSchema.transform(async (data) =
   if (user.verify === USER_VERIFY_STATUS.VERIFIED) {
     throw new AppError({
       message: 'Your email is already verified. You can now log in to your account',
-      status: status.FORBIDDEN
+      status: status.FORBIDDEN,
+      name: 'ALREADY_VERIFIED_ACCOUNT_ERROR'
     })
   }
 

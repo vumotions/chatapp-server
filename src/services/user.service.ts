@@ -1,4 +1,4 @@
-import { pick } from 'lodash'
+import { omit, pick } from 'lodash'
 import { env } from '~/config/env'
 import { OTP_PURPOSE, TOKEN_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import { generateUsername } from '~/helpers/common'
@@ -10,7 +10,8 @@ import { RegisterDTO } from '~/schemas/register.schema'
 import { UserIdentity } from '~/types/common.type'
 import jwtService from './jwt.service'
 import otpService from './otp.service'
-
+import SettingsModel from '~/models/settings.model'
+import mongoose from 'mongoose'
 class UserService {
   async signAccessToken({ userId, verify }: UserIdentity) {
     return jwtService.signToken({
@@ -80,13 +81,20 @@ class UserService {
     if (!user) {
       const dateOfBirth = new Date(body.year, body.month - 1, body.day)
       const passwordHash = hashPassword(body.password)
+      const userId = new mongoose.Types.ObjectId()
 
-      user = await UserModel.create({
-        passwordHash,
-        dateOfBirth,
-        username: generateUsername(body.name),
-        ...pick(body, ['name', 'email', 'gender'])
-      })
+      ;[user] = await Promise.all([
+        UserModel.create({
+          _id: userId,
+          passwordHash,
+          dateOfBirth,
+          username: generateUsername(body.name),
+          ...pick(body, ['name', 'email', 'gender'])
+        }),
+        SettingsModel.create({
+          userId
+        })
+      ])
     }
 
     const otpRecord = await otpService.sendOTP({
@@ -94,7 +102,7 @@ class UserService {
       user
     })
 
-    return { user, otpExpiresAt: otpRecord.expiresAt }
+    return { user: omit(user.toObject(), ['passwordHash']), otpExpiresAt: otpRecord.expiresAt }
   }
 
   async logout({ refreshToken }: { refreshToken: string }) {

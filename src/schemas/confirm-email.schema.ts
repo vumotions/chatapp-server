@@ -1,5 +1,5 @@
 import status from 'http-status'
-import z, { ZodIssueCode } from 'zod'
+import { ZodIssueCode } from 'zod'
 import { OTP_STATUS, USER_VERIFY_STATUS } from '~/constants/enums'
 import { getOTPErrorMessage } from '~/helpers/common'
 import { AppError } from '~/models/error.model'

@@ -1,17 +1,19 @@
 import { omit, pick } from 'lodash'
+import mongoose from 'mongoose'
 import { env } from '~/config/env'
 import { OTP_PURPOSE, TOKEN_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import { generateUsername } from '~/helpers/common'
 import { hashPassword } from '~/helpers/crypto'
 import OTPModel from '~/models/otp.model'
 import RefreshTokenModel from '~/models/refresh-token.model'
+import SettingsModel from '~/models/settings.model'
 import UserModel, { IUser } from '~/models/user.model'
-import { RegisterDTO } from '~/schemas/register.schema'
+import { RegisterDTO } from '~/schemas/auth/register.schema'
+import { UpdateMyProfileDTO } from '~/schemas/user/update-profile.schema'
 import { UserIdentity } from '~/types/common.type'
 import jwtService from './jwt.service'
 import otpService from './otp.service'
-import SettingsModel from '~/models/settings.model'
-import mongoose from 'mongoose'
+
 class UserService {
   async signAccessToken({ userId, verify }: UserIdentity) {
     return jwtService.signToken({
@@ -75,6 +77,44 @@ class UserService {
 
     return { accessToken, refreshToken }
   }
+
+  async loginOauth(body: {
+    provider: string
+    providerId: string
+    email: string
+    name: string
+    avatar: string
+  }) {
+    const { avatar, email, name, provider, providerId } = body
+    let user = await UserModel.findOne({ provider, providerId })
+    if (!user) {
+      const userId = new mongoose.Types.ObjectId()
+
+      ;[user] = await Promise.all([
+        UserModel.create({
+          _id: userId,
+          provider,
+          providerId,
+          username: generateUsername(name),
+          name,
+          email,
+          avatar,
+          verify: USER_VERIFY_STATUS.VERIFIED
+        }),
+        SettingsModel.create({ userId })
+      ])
+    }
+    const tokens = await this.login({
+      userId: user._id as string,
+      verify: user.verify
+    })
+
+    return {
+      user,
+      tokens
+    }
+  }
+
   async register(body: RegisterDTO) {
     let user = await this.getUserByEmail(body.email)
 
@@ -119,6 +159,16 @@ class UserService {
     return await UserModel.findOne({
       _id: id
     })
+  }
+
+  async getUserByUsername(username: string) {
+    return await UserModel.findOne({
+      username
+    })
+  }
+
+  async updateProfile({ userId, body }: { userId: string; body: UpdateMyProfileDTO }) {
+    return await UserModel.findOneAndUpdate({ _id: userId }, body, { new: true })
   }
 
   async getEmailVerificationStatus(email: string) {
@@ -185,6 +235,8 @@ class UserService {
       purpose: OTP_PURPOSE.FORGOT_PASSWORD
     })
   }
+
+  async sendFriendRequest() {}
 }
 
 const userService = new UserService()

@@ -1,17 +1,20 @@
 import { ObjectId } from 'mongodb'
 import { Document, Schema, model } from 'mongoose'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
+import { generateUsername } from '~/helpers/common'
 
 export interface IUser extends Document {
+  name?: string
   username: string
   email: string
-  passwordHash: string
-  profilePicture?: string
-  name?: string
+  passwordHash?: string
+  avatar?: string
+  coverPhoto?: string
   bio?: string
-  phoneNumber?: string
   dateOfBirth?: Date
-  verify: string
+  verify: USER_VERIFY_STATUS
+  provider?: string
+  providerId?: string
   isBot: boolean
   apiKey?: string
   createdBy: ObjectId | null
@@ -24,7 +27,12 @@ const userSchema = new Schema<IUser>(
   {
     username: {
       type: String,
-      unique: true
+      unique: true,
+      default: function () {
+        if (!this.username) {
+          return generateUsername(this.name || this.email)
+        }
+      }
     },
     email: {
       type: String,
@@ -32,18 +40,20 @@ const userSchema = new Schema<IUser>(
     },
     passwordHash: {
       type: String,
-      required: true
+      default: ''
     },
-    profilePicture: {
-      type: String
+    avatar: {
+      type: String,
+      default: ''
+    },
+    coverPhoto: {
+      type: String,
+      default: ''
     },
     name: {
       type: String
     },
     bio: {
-      type: String
-    },
-    phoneNumber: {
       type: String
     },
     dateOfBirth: {
@@ -53,6 +63,14 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: VERIFICATION_STATUS,
       default: USER_VERIFY_STATUS.UNVERIFIED
+    },
+    provider: {
+      type: String,
+      default: ''
+    },
+    providerId: {
+      type: String,
+      default: ''
     },
     isBot: {
       type: Boolean,

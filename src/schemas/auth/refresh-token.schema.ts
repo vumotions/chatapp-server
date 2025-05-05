@@ -7,11 +7,12 @@ import { TransformContext } from '~/models/transform-context.model'
 import jwtService from '~/services/jwt.service'
 
 const rawRefreshTokenSchema = z.object({
-  refreshToken: z.string()
+  refreshToken: z.string().optional()
 })
 
-export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data, ctx) => {
+export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data) => {
   const { refreshToken } = data
+  console.log('refreshtoken: ', refreshToken)
   if (!refreshToken) {
     throw new AppError({
       message: 'Refresh token is invalid',

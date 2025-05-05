@@ -3,7 +3,7 @@ import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { AppError } from '~/models/error.model'
 import { TransformContext } from '~/models/transform-context.model'
 import userService from '~/services/user.service'
-import { requestEmailOtpSchema } from './common.schema'
+import { requestEmailOtpSchema } from '../common.schema'
 
 export const requestEmailSchema = requestEmailOtpSchema.transform(async (data) => {
   const user = await userService.getUserByEmail(data.email)

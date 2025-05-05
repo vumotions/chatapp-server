@@ -1,7 +1,7 @@
 import { ZodIssueCode } from 'zod'
 import otpService from '~/services/otp.service'
 import userService from '~/services/user.service'
-import { confirmEmailOtpSchema } from './common.schema'
+import { confirmEmailOtpSchema } from '../common.schema'
 import { OTP_STATUS } from '~/constants/enums'
 import { getOTPErrorMessage } from '~/helpers/common'
 import { TransformContext } from '~/models/transform-context.model'

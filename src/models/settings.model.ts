@@ -56,11 +56,11 @@ const settingsSchema = new Schema<ISettings>(
         dateOfBirth: viewConfigSchema
       },
       default: {
-        phoneNumber: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        lastSeenOnline: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        profilePicture: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        bio: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE },
-        dateOfBirth: { whoCanSee: ACCESS_SCOPE.EVERYONE, whoCanFind: ACCESS_SCOPE.EVERYONE }
+        phoneNumber: defaultViewConfig,
+        lastSeenOnline: defaultViewConfig,
+        profilePicture: defaultViewConfig,
+        bio: defaultViewConfig,
+        dateOfBirth: defaultViewConfig
       }
     },
     security: {

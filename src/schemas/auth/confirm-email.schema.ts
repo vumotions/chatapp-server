@@ -6,7 +6,7 @@ import { AppError } from '~/models/error.model'
 import { TransformContext } from '~/models/transform-context.model'
 import otpService from '~/services/otp.service'
 import userService from '~/services/user.service'
-import { confirmEmailOtpSchema } from './common.schema'
+import { confirmEmailOtpSchema } from '../common.schema'
 
 export const confirmEmailSchema = confirmEmailOtpSchema.transform(async (data, ctx) => {
   const [otpStatus, user] = await Promise.all([

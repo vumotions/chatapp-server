@@ -32,7 +32,6 @@ const initSocket = async (server: HttpServer) => {
       console.log(socket.handshake.auth)
       const { Authorization } = socket.handshake.auth
       const accessToken = Authorization?.split(' ')[1]
-      console.log({ Authorization, accessToken })
       const decodedAccessToken = await jwtService.verifyToken({
         token: accessToken,
         secretOrPublicKey: env.JWT_ACCESS_TOKEN_PRIVATE_KEY
@@ -72,15 +71,6 @@ const initSocket = async (server: HttpServer) => {
           name: status['401_NAME']
         })
       }
-    })
-
-    console.log({ users })
-    socket.emit('greetings', {
-      message: 'Chao ban'
-    })
-
-    socket.on('lele', (data) => {
-      console.log(data)
     })
 
     socket.on(SOCKET_EVENTS.SEND_MESSAGE, (data) => {

@@ -1,15 +1,18 @@
 import { NextFunction, Request, Response } from 'express'
+import status from 'http-status'
 import { omit } from 'lodash'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
+import { AppError } from '~/models/error.model'
 import { AppSuccess } from '~/models/success.model'
 import { IUser } from '~/models/user.model'
+import { RefreshTokenDTO } from '~/schemas/auth/refresh-token.schema'
+import { RegisterDTO } from '~/schemas/auth/register.schema'
+import { ResetPasswordDTO } from '~/schemas/auth/reset-password.schema'
 import { ConfirmEmailOtpDTO } from '~/schemas/common.schema'
-import { RegisterDTO } from '~/schemas/register.schema'
-import { ResetPasswordDTO } from '~/schemas/reset-password.schema'
 import userService from '~/services/user.service'
 import { TokenPayload } from '~/types/payload.type'
 
-class UsersController {
+class AuthController {
   async register(req: Request<any, any, RegisterDTO>, res: Response, next: NextFunction) {
     const result = await userService.register(req.body)
 
@@ -36,6 +39,56 @@ class UsersController {
           user,
           tokens: result
         }
+      })
+    )
+  }
+
+  async loginOauth(
+    req: Request<
+      any,
+      any,
+      {
+        provider: string
+        providerId: string
+        email: string
+        name: string
+        avatar: string
+      }
+    >,
+    res: Response,
+    next: NextFunction
+  ) {
+    const { email, provider, providerId } = req.body
+
+    if (!email || !provider || !providerId) {
+      next(
+        new AppError({
+          message: 'Missing required fields',
+          status: status.NOT_FOUND
+        })
+      )
+    }
+
+    const data = await userService.loginOauth(req.body)
+
+    res.json(
+      new AppSuccess({
+        message: 'Login with google successfully',
+        data: { user: data.user, tokens: data.tokens }
+      })
+    )
+  }
+
+  async logout(req: Request<any, any, RefreshTokenDTO>, res: Response, next: NextFunction) {
+    const refreshToken = req.body?.refreshToken as string
+    await userService.logout({
+      refreshToken
+    })
+
+    res.json(
+      new AppSuccess({
+        message: 'Logout successfully',
+        data: null
       })
     )
   }
@@ -127,5 +180,5 @@ class UsersController {
   }
 }
 
-const userController = new UsersController()
-export default userController
+const authController = new AuthController()
+export default authController

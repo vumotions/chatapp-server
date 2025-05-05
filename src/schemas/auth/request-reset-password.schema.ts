@@ -1,5 +1,5 @@
 import userService from '~/services/user.service'
-import { requestEmailOtpSchema } from './common.schema'
+import { requestEmailOtpSchema } from '../common.schema'
 import { ZodIssueCode } from 'zod'
 import { TransformContext } from '~/models/transform-context.model'
 

@@ -17,7 +17,7 @@ userRoutes.get(
   wrapRequestHandler(userController.getMyProfile)
 )
 
-// Get my profile
+// Update my profile
 userRoutes.patch(
   '/my-profile',
   accessTokenValidator,
@@ -26,36 +26,12 @@ userRoutes.patch(
   wrapRequestHandler(userController.updateMyProfile)
 )
 
-// // Get friend list
-// userRoutes.get(
-//   '/:id/friends',
-//   accessTokenValidator,
-//   verifiedUserValidator,
-//   wrapRequestHandler(userController.getMyProfile)
-// )
-
-// userRoutes.post(
-//   '/:id/addfriend',
-//   accessTokenValidator,
-//   verifiedUserValidator,
-//   sendFriendRequestValidator,
-//   wrapRequestHandler(userController.getMyProfile)
-// )
-
-// userRoutes.post(
-//   '/:id/unfriend',
-//   accessTokenValidator,
-//   verifiedUserValidator,
-//   sendFriendRequestValidator,
-//   wrapRequestHandler(userController.getMyProfile)
-// )
-
-// userRoutes.get(
-//   '/:id/add-friend',
-//   accessTokenValidator,
-//   verifiedUserValidator,
-//   sendFriendRequestValidator,
-//   wrapRequestHandler(userController.getMyProfile)
-// )
+// Get user by ID
+userRoutes.get(
+  '/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(userController.getUserById)
+)
 
 export default userRoutes

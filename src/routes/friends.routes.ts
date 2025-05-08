@@ -47,4 +47,20 @@ friendsRoutes.get(
   friendsController.getFriendsList
 )
 
+// Xóa bạn bè
+friendsRoutes.delete(
+  '/remove/:friendId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  friendsController.removeFriend
+)
+
+// Lấy trạng thái kết bạn với một người dùng cụ thể
+friendsRoutes.get(
+  '/status/:friendId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  friendsController.getFriendStatus
+)
+
 export default friendsRoutes

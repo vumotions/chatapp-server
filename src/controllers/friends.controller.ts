@@ -10,6 +10,7 @@ import notificationService from '~/services/notification.service'
 import UserModel from '~/models/user.model'
 import { io, users } from '~/lib/socket'
 import SOCKET_EVENTS from '~/constants/socket-events'
+import mongoose, { ObjectId } from 'mongoose'
 
 class FriendsController {
   async addFriend(req: Request, res: Response, next: NextFunction) {
@@ -83,17 +84,19 @@ class FriendsController {
 
       // Tạo thông báo
       const notification = await notificationService.createNotification({
-        userId: friendRequest.senderId,
+        userId: friendRequest.senderId.toString(),
         senderId: userId,
         type: NOTIFICATION_TYPE.FRIEND_ACCEPTED,
-        relatedId: friendRequest._id
+        relatedId: friendRequest._id.toString()
       })
 
       // Emit socket event nếu người gửi đang online
       if (io) {
         const senderSocketId = users.get(friendRequest.senderId.toString())
         if (senderSocketId) {
-          console.log(`Sending notification to socket ${senderSocketId} (user ${friendRequest.senderId})`)
+          console.log(
+            `Sending notification to socket ${senderSocketId} (user ${friendRequest.senderId})`
+          )
           io.to(senderSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notification)
         }
       }
@@ -110,30 +113,27 @@ class FriendsController {
 
       // Lấy tất cả user đã là bạn
       const friends = await FriendModel.find({ userId }).select('friendId')
-      
+
       // Lấy danh sách lời mời đã gửi
-      const sentRequests = await FriendRequestModel.find({ 
+      const sentRequests = await FriendRequestModel.find({
         senderId: userId,
-        status: FRIEND_REQUEST_STATUS.PENDING 
+        status: FRIEND_REQUEST_STATUS.PENDING
       }).select('receiverId')
-      
+
       // Lấy danh sách lời mời đã nhận
-      const receivedRequests = await FriendRequestModel.find({ 
+      const receivedRequests = await FriendRequestModel.find({
         receiverId: userId,
-        status: FRIEND_REQUEST_STATUS.PENDING 
+        status: FRIEND_REQUEST_STATUS.PENDING
       }).select('senderId')
 
       // Chỉ loại trừ chính mình và những người đã là bạn
-      const excludeIds = [
-        userId,
-        ...friends.map((f) => f.friendId)
-      ]
+      const excludeIds = [userId, ...friends.map((f) => f.friendId)]
 
       // Lấy danh sách ID người đã nhận lời mời từ mình
-      const pendingIds = sentRequests.map(r => r.receiverId.toString())
-      
+      const pendingIds = sentRequests.map((r) => r.receiverId.toString())
+
       // Lấy danh sách ID người đã gửi lời mời cho mình
-      const receivedIds = receivedRequests.map(r => r.senderId.toString())
+      const receivedIds = receivedRequests.map((r) => r.senderId.toString())
 
       // Lấy user chưa là bạn, bao gồm cả những người đã nhận lời mời từ mình
       const userFriends = await FriendModel.find({ userId }).select('friendId')
@@ -149,24 +149,28 @@ class FriendsController {
       const suggestions = await Promise.all(
         allUsers.map(async (user) => {
           try {
-            const suggestionFriends = await FriendModel.find({ userId: user._id }).select('friendId')
+            const suggestionFriends = await FriendModel.find({ userId: user._id }).select(
+              'friendId'
+            )
             const suggestionFriendIds = suggestionFriends.map((f) => f.friendId.toString())
-            
+
             // Đếm số bạn chung
-            const mutualFriends = userFriendIds.filter((id) => suggestionFriendIds.includes(id)).length
-            
+            const mutualFriends = userFriendIds.filter((id) =>
+              suggestionFriendIds.includes(id)
+            ).length
+
             // Thêm trạng thái PENDING nếu người dùng đã gửi lời mời cho họ
-            const status = pendingIds.includes(user._id.toString()) 
-              ? FRIEND_REQUEST_STATUS.PENDING 
+            const status = pendingIds.includes(user._id.toString())
+              ? FRIEND_REQUEST_STATUS.PENDING
               : null
-            
+
             return {
               ...user,
               mutualFriends,
               status
             }
           } catch (error) {
-            console.error('Error processing suggestion:', error);
+            console.error('Error processing suggestion:', error)
             return {
               ...user,
               mutualFriends: 0,
@@ -180,8 +184,8 @@ class FriendsController {
       const receivedUsers = await UserModel.find({ _id: { $in: receivedIds } })
         .select('_id name avatar')
         .lean()
-      
-      const receivedSuggestions = receivedUsers.map(user => ({
+
+      const receivedSuggestions = receivedUsers.map((user) => ({
         ...user,
         mutualFriends: 0, // Có thể tính số bạn chung nếu cần
         status: 'RECEIVED' // Đánh dấu là đã nhận lời mời
@@ -191,10 +195,13 @@ class FriendsController {
       const combinedSuggestions = [...receivedSuggestions, ...suggestions]
 
       res.json(
-        new AppSuccess({ data: combinedSuggestions, message: 'Lấy danh sách bạn bè gợi ý thành công' })
+        new AppSuccess({
+          data: combinedSuggestions,
+          message: 'Lấy danh sách bạn bè gợi ý thành công'
+        })
       )
     } catch (error) {
-      next(error);
+      next(error)
     }
   }
 
@@ -241,6 +248,86 @@ class FriendsController {
       await notificationService.deleteNotificationByRelatedId(request._id)
 
       res.json(new AppSuccess({ message: 'Đã hủy lời mời kết bạn', data: null }))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Xóa bạn bè
+  async removeFriend(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { friendId } = req.params
+      const userId = (req.context?.user as IUser)._id as string
+
+      // Xóa cả hai bản ghi kết bạn (A-B và B-A)
+      await FriendModel.deleteMany({
+        $or: [
+          { userId, friendId },
+          { userId: friendId, friendId: userId }
+        ]
+      })
+
+      res.json(new AppSuccess({ message: 'Đã xóa bạn bè thành công', data: null }))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async getFriendStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req.context?.user as IUser)._id as string
+      const { friendId } = req.params
+
+      if (!friendId) {
+        throw new AppError({ message: 'Thiếu thông tin người dùng', status: 400 })
+      }
+
+      // Kiểm tra đã là bạn bè chưa
+      const isFriend = await FriendModel.findOne({ 
+        userId, 
+        friendId 
+      })
+
+      if (isFriend) {
+        return res.json(new AppSuccess({ 
+          message: 'Lấy trạng thái kết bạn thành công', 
+          data: { status: FRIEND_REQUEST_STATUS.ACCEPTED } 
+        }))
+      }
+
+      // Kiểm tra đã gửi lời mời kết bạn chưa
+      const sentRequest = await FriendRequestModel.findOne({
+        senderId: userId,
+        receiverId: friendId,
+        status: FRIEND_REQUEST_STATUS.PENDING
+      })
+
+      if (sentRequest) {
+        return res.json(new AppSuccess({ 
+          message: 'Lấy trạng thái kết bạn thành công', 
+          data: { status: FRIEND_REQUEST_STATUS.PENDING } 
+        }))
+      }
+
+      // Kiểm tra đã nhận lời mời kết bạn chưa
+      const receivedRequest = await FriendRequestModel.findOne({
+        senderId: friendId,
+        receiverId: userId,
+        status: FRIEND_REQUEST_STATUS.PENDING
+      })
+
+      if (receivedRequest) {
+        return res.json(new AppSuccess({ 
+          message: 'Lấy trạng thái kết bạn thành công', 
+          data: { status: 'RECEIVED' } 
+        }))
+      }
+
+      // Không có mối quan hệ
+      return res.json(new AppSuccess({ 
+        message: 'Lấy trạng thái kết bạn thành công', 
+        data: { status: null } 
+      }))
     } catch (error) {
       next(error)
     }

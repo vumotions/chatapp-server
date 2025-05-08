@@ -6,6 +6,12 @@ interface Attachment {
   type: MEDIA_TYPE
 }
 
+interface Reaction {
+  userId: ObjectId
+  type: string
+  createdAt: Date
+}
+
 export interface IMessage extends Document {
   chatId: ObjectId
   senderId: ObjectId
@@ -15,6 +21,7 @@ export interface IMessage extends Document {
   status: MESSAGE_STATUS
   readBy: string[]
   isPinned?: boolean
+  reactions?: Reaction[]
 }
 
 const messageSchema = new Schema<IMessage>(
@@ -67,7 +74,24 @@ const messageSchema = new Schema<IMessage>(
     isPinned: {
       type: Boolean,
       default: false
-    }
+    },
+    reactions: [
+      {
+        userId: {
+          type: Schema.Types.ObjectId,
+          ref: 'User',
+          required: true
+        },
+        type: {
+          type: String,
+          default: '❤️'
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ]
   },
   { timestamps: true }
 )

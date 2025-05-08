@@ -7,31 +7,31 @@ interface Attachment {
 }
 
 export interface IMessage extends Document {
-  chat_id: ObjectId
-  sender_id: ObjectId
+  chatId: ObjectId
+  senderId: ObjectId
   content?: string
   attachments?: Attachment[]
   type: MESSAGE_TYPE
   status: MESSAGE_STATUS
   readBy: string[]
-  is_pinned?: boolean
+  isPinned?: boolean
 }
 
 const messageSchema = new Schema<IMessage>(
   {
-    chat_id: {
+    chatId: {
       type: Schema.Types.ObjectId,
       ref: 'Chat',
       required: true
     },
-    sender_id: {
+    senderId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
     },
     content: {
       type: String,
-      required: function () {
+      required: function (this: IMessage) {
         return this.type === MESSAGE_TYPE.TEXT
       }
     },
@@ -41,10 +41,10 @@ const messageSchema = new Schema<IMessage>(
     },
     attachments: [
       {
-        media_url: {
+        mediaUrl: {
           type: String,
-          required: function () {
-            return [MEDIA_TYPE.FILE, MEDIA_TYPE.VIDEO, MEDIA_TYPE.IMAGE].includes(this.type)
+          required: function (this: { $parent: IMessage }) {
+            return this.$parent.type === MESSAGE_TYPE.MEDIA
           }
         },
         type: {
@@ -64,7 +64,7 @@ const messageSchema = new Schema<IMessage>(
       enum: [MESSAGE_STATUS.SENT, MESSAGE_STATUS.DELIVERED, MESSAGE_STATUS.SEEN],
       default: MESSAGE_STATUS.SENT
     },
-    is_pinned: {
+    isPinned: {
       type: Boolean,
       default: false
     }

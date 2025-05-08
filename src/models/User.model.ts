@@ -82,6 +82,9 @@ const userSchema = new Schema<IUser>(
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+      required: function () {
+        return this.isBot
+      },
       default: null
     },
     emailLockedUntil: {

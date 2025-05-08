@@ -44,7 +44,7 @@ const chatSchema = new Schema<IChat>(
       }
     ]
   },
-  { timestamps: true }
+  { timestamps: true, strictQuery: false }
 )
 
 const ChatModel = model<IChat>('Chat', chatSchema)

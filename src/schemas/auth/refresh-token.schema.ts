@@ -12,7 +12,7 @@ const rawRefreshTokenSchema = z.object({
 
 export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data) => {
   const { refreshToken } = data
-  console.log('refreshtoken: ', refreshToken)
+
   if (!refreshToken) {
     throw new AppError({
       message: 'Refresh token is invalid',

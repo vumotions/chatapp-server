@@ -64,7 +64,16 @@ class UserService {
       token: tokens.refreshToken
     })
 
-    return tokens
+    const accessTokenExpiresAt = await this.getAccessTokenExpiry(tokens.accessToken)
+    return { ...tokens, accessTokenExpiresAt }
+  }
+
+  async getAccessTokenExpiry(token: string) {
+    const { exp } = await jwtService.verifyToken({
+      token,
+      secretOrPublicKey: env.JWT_ACCESS_TOKEN_PRIVATE_KEY
+    })
+    return exp
   }
 
   async login(payload: UserIdentity) {
@@ -75,7 +84,9 @@ class UserService {
       token: refreshToken
     })
 
-    return { accessToken, refreshToken }
+    const accessTokenExpiresAt = await this.getAccessTokenExpiry(accessToken)
+
+    return { accessToken, refreshToken, accessTokenExpiresAt }
   }
 
   async loginOauth(body: {
@@ -109,9 +120,13 @@ class UserService {
       verify: user.verify
     })
 
+    const accessTokenExpiresAt = await this.getAccessTokenExpiry(tokens.accessToken)
     return {
       user,
-      tokens
+      tokens: {
+        ...tokens,
+        accessTokenExpiresAt
+      }
     }
   }
 

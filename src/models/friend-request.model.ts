@@ -2,19 +2,19 @@ import { model, ObjectId, Schema } from 'mongoose'
 import { FRIEND_REQUEST_STATUS } from '~/constants/enums'
 
 export interface IFriendRequest extends Document {
-  senderUserId: ObjectId
-  receiverUserId: ObjectId
+  senderId: ObjectId
+  receiverId: ObjectId
   status: FRIEND_REQUEST_STATUS
 }
 
 const friendRequestSchema = new Schema<IFriendRequest>(
   {
-    senderUserId: {
+    senderId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
     },
-    receiverUserId: {
+    receiverId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
@@ -23,8 +23,8 @@ const friendRequestSchema = new Schema<IFriendRequest>(
       type: String,
       enum: [
         FRIEND_REQUEST_STATUS.ACCEPTED,
-        FRIEND_REQUEST_STATUS.DECLINED,
-        FRIEND_REQUEST_STATUS.ACCEPTED
+        FRIEND_REQUEST_STATUS.REJECTED,
+        FRIEND_REQUEST_STATUS.PENDING
       ],
       default: FRIEND_REQUEST_STATUS.PENDING
     }

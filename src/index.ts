@@ -8,9 +8,11 @@ import database from './lib/database'
 import initSocket from './lib/socket'
 import defaultErrorHandler from './middlewares/error.middleware'
 import authRoutes from './routes/auth.routes'
+import conversationsRoutes from './routes/conversations.routes'
+import friendsRoutes from './routes/friends.routes'
+import notificationRoutes from './routes/notifications.routes'
 import postsRoutes from './routes/posts.routes'
 import userRoutes from './routes/user.routes'
-import conversationsRoutes from './routes/conversations.routes'
 
 const port = env.PORT
 
@@ -26,6 +28,8 @@ app.use(express.urlencoded({ extended: true }))
 app.use('/api/auth', authRoutes)
 app.use('/api/user', userRoutes)
 app.use('/api/chat', conversationsRoutes)
+app.use('/api/notifications', notificationRoutes)
+app.use('/api/friends', friendsRoutes)
 app.use('/api/posts', postsRoutes)
 
 app.use(defaultErrorHandler)

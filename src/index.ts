@@ -35,8 +35,24 @@ app.use('/api/posts', postsRoutes)
 app.use(defaultErrorHandler)
 
 const server = http.createServer(app)
-initSocket(server)
 
-server.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`)
-})
+// Khởi tạo socket trước khi khởi động server
+;(async () => {
+  try {
+    console.log('Initializing Socket.io...')
+    const socketIo = await initSocket(server)
+    app.set('io', socketIo)
+    console.log('Socket.io initialized and stored in app')
+    
+    // Khởi động server sau khi socket đã được khởi tạo
+    server.listen(port, () => {
+      console.log(`Server running at http://localhost:${port}`)
+    })
+  } catch (error) {
+    console.error('Failed to initialize Socket.io:', error)
+    // Vẫn khởi động server ngay cả khi socket khởi tạo thất bại
+    server.listen(port, () => {
+      console.log(`Server running at http://localhost:${port} (without Socket.io)`)
+    })
+  }
+})()

@@ -40,4 +40,22 @@ conversationsRoutes.patch(
   wrapRequestHandler(conversationsController.markChatAsRead)
 )
 
+// Thêm routes cho xóa và chỉnh sửa tin nhắn
+conversationsRoutes.delete(
+  '/messages/:messageId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.deleteMessage)
+)
+
+conversationsRoutes.put(
+  '/messages/:messageId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.editMessage)
+)
+
+// Thêm route test socket
+conversationsRoutes.post('/test-socket', accessTokenValidator, conversationsController.testSocket)
+
 export default conversationsRoutes

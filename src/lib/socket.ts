@@ -19,7 +19,25 @@ export const users = new Map<string, string>()
 // Thêm Map để lưu trữ thời gian hoạt động gần nhất của người dùng
 export const lastActiveMap = new Map<string, string>()
 
+// Thêm hàm helper để gửi sự kiện socket
+export const emitSocketEvent = (room: string, event: string, data: any) => {
+  if (io) {
+    try {
+      console.log(`Emitting ${event} to room ${room}`, data)
+      io.to(room).emit(event, data)
+      return true
+    } catch (error) {
+      console.error(`Error emitting ${event} to room ${room}:`, error)
+      return false
+    }
+  } else {
+    console.error('Socket.io instance not available for emitting events')
+    return false
+  }
+}
+
 const initSocket = async (server: HttpServer) => {
+  console.log('Creating Socket.io instance...')
   io = new Server(server, {
     cors: {
       origin: env.WEBSITE_URL || 'http://localhost:3000',
@@ -233,15 +251,22 @@ const initSocket = async (server: HttpServer) => {
       }
     })
 
-    socket.on('JOIN_ROOM', (data: { chatId: string }) => {
-      try {
-        const { chatId } = data
-        console.log(`User ${userId} joining room ${chatId}`)
-        socket.join(chatId)
-      } catch (error) {
-        console.error('Error joining room:', error)
-      }
-    })
+    socket.on('JOIN_ROOM', (roomId) => {
+      console.log(`User ${socket.data.userId || socket.id} joining room: ${roomId}`);
+      socket.join(roomId);
+      console.log(`Rooms for socket ${socket.id}:`, Array.from(socket.rooms));
+      
+      // Thông báo cho các client khác trong room biết có người mới tham gia
+      socket.to(roomId).emit('USER_JOINED', {
+        userId: socket.data.userId,
+        roomId
+      });
+    });
+
+    socket.on('READY_FOR_MESSAGES', (roomId) => {
+      console.log(`User ${socket.data.userId || socket.id} is ready for messages in room: ${roomId}`);
+      // Có thể gửi lại tin nhắn gần nhất nếu cần
+    });
 
     // Handle marking messages as read
     socket.on(SOCKET_EVENTS.MARK_AS_READ, async (data) => {
@@ -445,6 +470,56 @@ const initSocket = async (server: HttpServer) => {
       }
     })
 
+    socket.on('TEST_DELETE_MESSAGE', (data) => {
+      const { messageId, chatId } = data;
+      console.log(`Received TEST_DELETE_MESSAGE: ${messageId} in chat ${chatId}`);
+      
+      // Gửi sự kiện MESSAGE_DELETED đến tất cả clients
+      io.emit('MESSAGE_DELETED', {
+        messageId,
+        chatId
+      });
+      
+      // Gửi sự kiện đến room cụ thể
+      io.to(chatId).emit('MESSAGE_DELETED', {
+        messageId,
+        chatId
+      });
+      
+      console.log('Test MESSAGE_DELETED event emitted');
+    });
+
+    socket.on('CHECK_NEW_MESSAGES', async (data) => {
+      try {
+        const { chatId, latestMessageId } = data;
+        console.log(`Checking for new messages in chat ${chatId} after message ${latestMessageId}`);
+        
+        // Tìm các tin nhắn mới hơn latestMessageId
+        const newMessages = await MessageModel.find({
+          chatId,
+          _id: { $gt: latestMessageId }
+        })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('sender', 'name avatar')
+        .lean();
+        
+        if (newMessages.length > 0) {
+          console.log(`Found ${newMessages.length} new messages to sync`);
+          
+          // Gửi tin nhắn mới cho client
+          socket.emit('SYNC_MESSAGES', {
+            messages: newMessages,
+            chatId
+          });
+        } else {
+          console.log('No new messages to sync');
+        }
+      } catch (error) {
+        console.error('Error checking for new messages:', error);
+      }
+    });
+
     socket.on('error', (error) => {
       console.error('Socket error:', error)
       if (error.message === status['401_NAME']) {
@@ -465,7 +540,8 @@ const initSocket = async (server: HttpServer) => {
     })
   })
 
-  return io
+  console.log('Socket.io instance created successfully')
+  return io // Đảm bảo trả về đối tượng io
 }
 
 export default initSocket

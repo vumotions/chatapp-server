@@ -75,6 +75,10 @@ const messageSchema = new Schema<IMessage>(
       type: Boolean,
       default: false
     },
+    isEdited: {
+      type: Boolean,
+      default: false
+    },
     reactions: [
       {
         userId: {

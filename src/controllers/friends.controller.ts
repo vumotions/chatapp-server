@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { FRIEND_REQUEST_STATUS, NOTIFICATION_TYPE } from '~/constants/enums'
+import { FRIEND_REQUEST_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import { AppError } from '~/models/error.model'
 import FriendRequestModel from '~/models/friend-request.model'
 import FriendModel from '~/models/friend.model'
@@ -14,38 +14,58 @@ import mongoose, { ObjectId } from 'mongoose'
 
 class FriendsController {
   async addFriend(req: Request, res: Response, next: NextFunction) {
-    const userId = (req.context?.user as IUser)._id as string
-    const { userId: receiverId } = req.body
+    try {
+      const userId = (req.context?.user as IUser)._id as string
+      const { userId: receiverId } = req.body
 
-    if (userId.toString() === receiverId) {
-      throw new AppError({ message: 'Không thể kết bạn với chính mình', status: 400 })
+      if (userId.toString() === receiverId) {
+        throw new AppError({ message: 'Không thể kết bạn với chính mình', status: 400 })
+      }
+
+      // Kiểm tra đã là bạn hoặc đã gửi request chưa
+      const isFriend = await FriendModel.findOne({ userId, friendId: receiverId })
+      const isRequested = await FriendRequestModel.findOne({ senderId: userId, receiverId })
+
+      if (isFriend || isRequested) {
+        throw new AppError({ message: 'Đã gửi lời mời hoặc đã là bạn', status: 400 })
+      }
+
+      const friendRequest = await FriendRequestModel.create({
+        senderId: userId,
+        receiverId,
+        status: FRIEND_REQUEST_STATUS.PENDING
+      })
+
+      // Gửi thông báo
+      const notification = await notificationService.createNotification({
+        userId: receiverId,
+        senderId: userId,
+        type: NOTIFICATION_TYPE.FRIEND_REQUEST,
+        relatedId: friendRequest._id
+      })
+      
+      // Emit socket event với thông tin người gửi đầy đủ
+      const sender = await UserModel.findById(userId).select('_id name avatar').lean()
+      
+      if (io) {
+        console.log(`Emitting notification to user ${receiverId}`)
+        try {
+          io.to(String(receiverId)).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
+            ...notification.toObject(),
+            sender: sender
+          })
+        } catch (error) {
+          console.error('Error emitting notification:', error)
+          // Continue execution even if socket emission fails
+        }
+      } else {
+        console.error('Socket.io instance not available')
+      }
+
+      res.json(new AppSuccess({ message: 'Đã gửi lời mời kết bạn', data: null }))
+    } catch (error) {
+      next(error)
     }
-
-    // Kiểm tra đã là bạn hoặc đã gửi request chưa
-    const isFriend = await FriendModel.findOne({ userId, friendId: receiverId })
-    const isRequested = await FriendRequestModel.findOne({ senderId: userId, receiverId })
-
-    if (isFriend || isRequested) {
-      throw new AppError({ message: 'Đã gửi lời mời hoặc đã là bạn', status: 400 })
-    }
-
-    const friendRequest = await FriendRequestModel.create({
-      senderId: userId,
-      receiverId,
-      status: FRIEND_REQUEST_STATUS.PENDING
-    })
-
-    // Gửi thông báo
-    const notification = await notificationService.createNotification({
-      userId: receiverId,
-      senderId: userId,
-      type: NOTIFICATION_TYPE.FRIEND_REQUEST,
-      relatedId: friendRequest._id
-    })
-    // Emit socket event
-    io?.to(String(receiverId)).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notification)
-
-    res.json(new AppSuccess({ message: 'Đã gửi lời mời kết bạn', data: null }))
   }
 
   async acceptFriendRequest(req: Request, res: Response, next: NextFunction) {
@@ -82,6 +102,9 @@ class FriendsController {
         friendId: userId
       })
 
+      // Lấy thông tin người chấp nhận lời mời
+      const accepter = await UserModel.findById(userId).select('_id name avatar').lean()
+
       // Tạo thông báo
       const notification = await notificationService.createNotification({
         userId: friendRequest.senderId.toString(),
@@ -90,15 +113,15 @@ class FriendsController {
         relatedId: friendRequest._id.toString()
       })
 
-      // Emit socket event nếu người gửi đang online
+      // Emit socket event với thông tin người chấp nhận đầy đủ
       if (io) {
-        const senderSocketId = users.get(friendRequest.senderId.toString())
-        if (senderSocketId) {
-          console.log(
-            `Sending notification to socket ${senderSocketId} (user ${friendRequest.senderId})`
-          )
-          io.to(senderSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notification)
-        }
+        console.log(`Emitting friend acceptance notification to user ${friendRequest.senderId}`)
+        io.to(friendRequest.senderId.toString()).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
+          ...notification.toObject(),
+          sender: accepter
+        })
+      } else {
+        console.error('Socket.io instance not available')
       }
 
       res.json(new AppSuccess({ message: 'Đã chấp nhận lời mời kết bạn', data: null }))
@@ -139,8 +162,11 @@ class FriendsController {
       const userFriends = await FriendModel.find({ userId }).select('friendId')
       const userFriendIds = userFriends.map((f) => f.friendId.toString())
 
-      // Lấy tất cả người dùng trừ những người đã loại trừ
-      const allUsers = await UserModel.find({ _id: { $nin: excludeIds } })
+      // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
+      const allUsers = await UserModel.find({ 
+        _id: { $nin: excludeIds },
+        verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
+      })
         .select('_id name avatar')
         .limit(10)
         .lean()
@@ -180,8 +206,11 @@ class FriendsController {
         })
       )
 
-      // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý
-      const receivedUsers = await UserModel.find({ _id: { $in: receivedIds } })
+      // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
+      const receivedUsers = await UserModel.find({ 
+        _id: { $in: receivedIds },
+        verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
+      })
         .select('_id name avatar')
         .lean()
 
@@ -264,6 +293,14 @@ class FriendsController {
         $or: [
           { userId, friendId },
           { userId: friendId, friendId: userId }
+        ]
+      })
+
+      // Xóa tất cả các yêu cầu kết bạn giữa hai người dùng
+      await FriendRequestModel.deleteMany({
+        $or: [
+          { senderId: userId, receiverId: friendId },
+          { senderId: friendId, receiverId: userId }
         ]
       })
 

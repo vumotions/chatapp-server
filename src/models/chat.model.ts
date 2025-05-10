@@ -9,6 +9,7 @@ export interface IChat extends Document {
   lastMessage?: ObjectId
   participants: ObjectId[]
   read: boolean
+  archived: boolean
 }
 
 const chatSchema = new Schema<IChat>(
@@ -37,6 +38,10 @@ const chatSchema = new Schema<IChat>(
       type: Boolean,
       default: false
     },
+    archived: {
+      type: Boolean,
+      default: false
+    },
     participants: [
       {
         type: Schema.Types.ObjectId,
@@ -44,7 +49,10 @@ const chatSchema = new Schema<IChat>(
       }
     ]
   },
-  { timestamps: true, strictQuery: false }
+  { 
+    timestamps: true, 
+    strictQuery: false 
+  }
 )
 
 const ChatModel = model<IChat>('Chat', chatSchema)

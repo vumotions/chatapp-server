@@ -21,6 +21,7 @@ export interface IMessage extends Document {
   status: MESSAGE_STATUS
   readBy: string[]
   isPinned?: boolean
+  isEdited?: boolean
   reactions?: Reaction[]
 }
 

@@ -107,11 +107,25 @@ const initSocket = async (server: HttpServer) => {
     socket.on(SOCKET_EVENTS.CHECK_ONLINE, (checkUserId, callback) => {
       try {
         const isOnline = users.has(checkUserId)
-        const lastActive = lastActiveMap.get(checkUserId) || new Date().toISOString()
-        callback(isOnline, lastActive)
+        
+        // Nếu người dùng đang online, trả về thời gian hiện tại
+        if (isOnline) {
+          callback(true, new Date().toISOString())
+          return
+        }
+        
+        // Lấy thời gian hoạt động gần nhất từ lastActiveMap
+        const lastActive = lastActiveMap.get(checkUserId)
+        
+        // Nếu không có trong lastActiveMap (chưa từng online), trả về một giá trị đặc biệt
+        if (!lastActive) {
+          callback(false, 'never')  // Sử dụng 'never' để đánh dấu chưa từng online
+        } else {
+          callback(false, lastActive)
+        }
       } catch (error) {
         console.error('Error checking online status:', error)
-        callback(false, new Date().toISOString())
+        callback(false, null)
       }
     })
 
@@ -180,7 +194,8 @@ const initSocket = async (server: HttpServer) => {
 
         // Cập nhật chat
         chat.lastMessage = message._id as ObjectId
-        chat.read = false // Đánh dấu là chưa đọc khi có tin nhắn mới
+        chat.read = false 
+        chat.set('updatedAt', new Date()) 
         await chat.save()
 
         // Join room
@@ -501,7 +516,8 @@ const initSocket = async (server: HttpServer) => {
         })
         .sort({ createdAt: -1 })
         .limit(10)
-        .populate('sender', 'name avatar')
+        .populate('senderId', 'name avatar')
+        .setOptions({ strictPopulate: false }) // Thêm tùy chọn này nếu cần
         .lean();
         
         if (newMessages.length > 0) {
@@ -535,12 +551,9 @@ const initSocket = async (server: HttpServer) => {
       io.emit(SOCKET_EVENTS.USER_OFFLINE, userId, lastActiveMap.get(userId))
 
       users.delete(userId)
-      console.log(`User ${socket.id} (${userId}) disconnected`)
-      console.log('Remaining users:', Array.from(users.entries()))
     })
   })
 
-  console.log('Socket.io instance created successfully')
   return io // Đảm bảo trả về đối tượng io
 }
 

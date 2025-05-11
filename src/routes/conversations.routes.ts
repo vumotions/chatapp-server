@@ -115,4 +115,12 @@ conversationsRoutes.get(
   wrapRequestHandler(conversationsController.getPinnedMessages)
 )
 
+// Tạo nhóm chat mới
+conversationsRoutes.post(
+  '/group',
+  accessTokenValidator,
+  verifiedUserValidator,
+  conversationsController.createGroupConversation
+)
+
 export default conversationsRoutes

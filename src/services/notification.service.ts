@@ -39,6 +39,7 @@ class NotificationService {
       .skip(skip)
       .limit(limit)
       .populate('senderId', 'name avatar')
+      .populate('relatedId') // Populate relatedId để lấy thông tin về lời mời kết bạn
     
     // Kiểm tra xem còn dữ liệu phía sau không
     const hasMore = page * limit < total

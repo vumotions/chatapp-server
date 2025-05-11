@@ -96,12 +96,16 @@ const initSocket = async (server: HttpServer) => {
     console.log(`User ${userId} mapped to socket ${socket.id}`)
     console.log('Current users:', Array.from(users.entries()))
 
-    // Cập nhật trạng thái online và thông báo cho tất cả người dùng
-    io.emit(SOCKET_EVENTS.USER_ONLINE, userId)
-
     // Tham gia vào room cá nhân để nhận thông báo
     socket.join(userId)
-    console.log(`User ${userId} joined personal room`)
+    console.log(`User ${userId} joined personal room ${userId}`)
+    
+    // Thêm log để kiểm tra các room
+    console.log(`Socket ${socket.id} rooms:`, Array.from(socket.rooms))
+
+    // Thông báo cho tất cả người dùng biết người dùng này đã online
+    io.emit(SOCKET_EVENTS.USER_ONLINE, userId)
+    console.log(`Broadcast user ${userId} is online`)
 
     // Xử lý sự kiện CHECK_ONLINE
     socket.on(SOCKET_EVENTS.CHECK_ONLINE, (checkUserId, callback) => {
@@ -201,36 +205,43 @@ const initSocket = async (server: HttpServer) => {
         // Join room
         socket.join(finalChatId)
 
-        // Gửi tới tất cả user trong room
+        // Gửi tới tất cả user trong room với đầy đủ thông tin người gửi
         io.to(finalChatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
           ...message.toObject(),
           senderName: socket.handshake.auth.decodedAccessToken.name || 'User',
           senderAvatar: socket.handshake.auth.decodedAccessToken.avatar || null
         })
 
-        // Tạo thông báo cho những người không online
-        const onlineUsers = Array.from(users.keys())
-        const offlineParticipants = chat.participants.filter(
-          (participant: ObjectId) => !onlineUsers.includes(participant.toString())
-        )
-
-        for (const participantId of offlineParticipants) {
+        // Tạo thông báo cho tất cả người tham gia trừ người gửi
+        for (const participantId of chat.participants) {
+          // Bỏ qua người gửi tin nhắn
+          if (participantId.toString() === userId.toString()) continue;
+          
+          // Tạo thông báo
           const notification = await NotificationModel.create({
             userId: participantId,
             senderId: userId,
             type: NOTIFICATION_TYPE.NEW_MESSAGE,
-            relatedId: message._id
-          })
-
-          // Thêm dòng này để gửi thông báo ngay cả khi người dùng online
-          io.to(participantId.toString()).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
-            ...notification.toObject(),
-            sender: {
-              _id: userId,
-              name: socket.handshake.auth.decodedAccessToken.name,
-              avatar: socket.handshake.auth.decodedAccessToken.avatar
+            relatedId: message._id,
+            metadata: {
+              chatId: finalChatId,
+              chatName: chat.name || null,
+              isGroup: chat.type === CHAT_TYPE.GROUP
             }
-          })
+          });
+
+          // Gửi thông báo qua socket
+          const recipientSocketId = users.get(participantId.toString());
+          if (recipientSocketId) {
+            io.to(recipientSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
+              ...notification.toObject(),
+              sender: {
+                _id: userId,
+                name: socket.handshake.auth.decodedAccessToken.name,
+                avatar: socket.handshake.auth.decodedAccessToken.avatar
+              }
+            });
+          }
         }
       } catch (error) {
         console.error('SEND_MESSAGE error:', error)
@@ -545,12 +556,18 @@ const initSocket = async (server: HttpServer) => {
 
     socket.on('disconnect', () => {
       // Lưu thời gian hoạt động gần nhất trước khi xóa khỏi danh sách online
-      lastActiveMap.set(userId, new Date().toISOString())
-
-      // Thông báo cho tất cả người dùng rằng người dùng này đã offline
-      io.emit(SOCKET_EVENTS.USER_OFFLINE, userId, lastActiveMap.get(userId))
-
+      const currentTime = new Date().toISOString()
+      lastActiveMap.set(userId, currentTime)
+      
+      // Xóa khỏi danh sách users online
       users.delete(userId)
+      
+      console.log(`User ${userId} disconnected at ${currentTime}`)
+      console.log('Remaining online users:', Array.from(users.entries()))
+      
+      // Thông báo cho tất cả người dùng biết người dùng này đã offline
+      io.emit(SOCKET_EVENTS.USER_OFFLINE, userId, lastActiveMap.get(userId))
+      console.log(`Broadcast user ${userId} is offline`)
     })
   })
 

@@ -235,28 +235,58 @@ class ConversationsController {
       )
     }
 
-    // Cập nhật trạng thái read của chat
-    const chat = await ChatModel.findOneAndUpdate(
-      { _id: chatId, participants: userId },
-      { read: true },
-      { new: true }
-    )
+    try {
+      // Tìm chat
+      const chat = await ChatModel.findOne({ _id: chatId, participants: userId })
+      
+      if (!chat) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Chat not found'
+          })
+        )
+      }
+      
+      // Kiểm tra xem tin nhắn cuối cùng có phải của người dùng hiện tại không
+      if (chat.lastMessage) {
+        const lastMessage = await MessageModel.findById(chat.lastMessage)
+        
+        // Nếu tin nhắn cuối cùng là của người dùng hiện tại, không cần đánh dấu đã đọc
+        if (lastMessage && lastMessage.senderId.toString() === userId.toString()) {
+          // Vẫn trả về thành công nhưng không thay đổi trạng thái
+          return res.json(
+            new AppSuccess({
+              message: 'No need to mark as read for own messages',
+              data: chat
+            })
+          )
+        }
+      }
 
-    if (!chat) {
-      return next(
-        new AppError({
-          status: status.NOT_FOUND,
-          message: 'Chat not found'
+      // Cập nhật trạng thái read của chat
+      chat.read = true
+      await chat.save()
+
+      // Đánh dấu tất cả tin nhắn trong chat là đã đọc
+      await MessageModel.updateMany(
+        { 
+          chatId, 
+          senderId: { $ne: userId } // Chỉ đánh dấu tin nhắn không phải của người dùng hiện tại
+        },
+        { status: MESSAGE_STATUS.SEEN }
+      )
+
+      res.json(
+        new AppSuccess({
+          message: 'Chat marked as read',
+          data: chat
         })
       )
+    } catch (error) {
+      console.error('Error marking chat as read:', error)
+      next(error)
     }
-
-    res.json(
-      new AppSuccess({
-        message: 'Chat marked as read',
-        data: chat
-      })
-    )
   }
 
   // Thêm phương thức xóa tin nhắn
@@ -966,6 +996,42 @@ class ConversationsController {
       )
     } catch (error) {
       console.error('Error in getPinnedMessages:', error)
+      next(error)
+    }
+  }
+
+  async createGroupConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+      const { participants, name, avatar } = req.body
+
+      // Kiểm tra tên nhóm
+      if (!name || name.trim() === '') {
+        throw new AppError({ message: 'Tên nhóm không được để trống', status: 400 })
+      }
+
+      // Tạo nhóm chat mới
+      const conversation = await ChatModel.create({
+        userId, // Người tạo nhóm
+        participants: [userId, ...participants],
+        type: CHAT_TYPE.GROUP,
+        name,
+        avatar
+      })
+
+      // Tạo tin nhắn hệ thống thông báo nhóm được tạo
+      await MessageModel.create({
+        chatId: conversation._id,
+        senderId: userId,
+        content: `${req.context?.user?.name} đã tạo nhóm`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      res.json(
+        new AppSuccess({ data: conversation, message: 'Tạo nhóm chat thành công' })
+      )
+    } catch (error) {
       next(error)
     }
   }

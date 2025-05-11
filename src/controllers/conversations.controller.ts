@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import status from 'http-status'
 import mongoose, { Schema } from 'mongoose'
-import { CHAT_TYPE, MESSAGE_STATUS } from '~/constants/enums'
+import { CHAT_TYPE, MESSAGE_STATUS, MESSAGE_TYPE } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import { emitSocketEvent } from '~/lib/socket'
 import ChatModel from '~/models/chat.model'
@@ -234,7 +234,7 @@ class ConversationsController {
       }
 
       // Kiểm tra xem người dùng có trong cuộc trò chuyện không
-      if (!chat.participants.includes(userId)) {
+      if (!chat.participants.some(id => id.toString() === userId?.toString())) {
         throw new AppError({ message: 'Bạn không có quyền truy cập cuộc trò chuyện này', status: 403 })
       }
 
@@ -254,13 +254,16 @@ class ConversationsController {
       )
 
       // Emit sự kiện MESSAGE_READ để thông báo cho tất cả người dùng trong cuộc trò chuyện
-      req.io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-        chatId,
-        messageIds: [], // Không cần gửi messageIds cụ thể, chỉ cần chatId
-        readBy: userId
-      })
+      const io = req.app.get('io')
+      if (io) {
+        io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
+          chatId,
+          messageIds: [], // Không cần gửi messageIds cụ thể, chỉ cần chatId
+          readBy: userId
+        })
+      }
 
-      res.json(new AppSuccess({ message: 'Đánh dấu cuộc trò chuyện là đã đọc thành công' }))
+      res.json(new AppSuccess({ message: 'Đánh dấu cuộc trò chuyện là đã đọc thành công', data: { success: true } }))
     } catch (error) {
       next(error)
     }
@@ -987,6 +990,11 @@ class ConversationsController {
         throw new AppError({ message: 'Tên nhóm không được để trống', status: 400 })
       }
 
+      // Kiểm tra danh sách người tham gia
+      if (!participants || !Array.isArray(participants) || participants.length < 2) {
+        throw new AppError({ message: 'Nhóm chat phải có ít nhất 2 người tham gia', status: 400 })
+      }
+
       // Tạo nhóm chat mới
       const conversation = await ChatModel.create({
         userId, // Người tạo nhóm
@@ -997,7 +1005,7 @@ class ConversationsController {
       })
 
       // Tạo tin nhắn hệ thống thông báo nhóm được tạo
-      await MessageModel.create({
+      const systemMessage = await MessageModel.create({
         chatId: conversation._id,
         senderId: userId,
         content: `${req.context?.user?.name} đã tạo nhóm`,
@@ -1005,10 +1013,24 @@ class ConversationsController {
         status: MESSAGE_STATUS.DELIVERED
       })
 
+      // Cập nhật lastMessage cho cuộc trò chuyện
+      conversation.lastMessage = systemMessage._id as any
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên về nhóm mới
+      emitSocketEvent(conversation._id.toString(), SOCKET_EVENTS.GROUP_CREATED, {
+        conversation: {
+          ...conversation.toObject(),
+          lastMessage: systemMessage
+        },
+        createdBy: userId
+      })
+
       res.json(
         new AppSuccess({ data: conversation, message: 'Tạo nhóm chat thành công' })
       )
     } catch (error) {
+      console.error('Error in createGroupConversation:', error)
       next(error)
     }
   }

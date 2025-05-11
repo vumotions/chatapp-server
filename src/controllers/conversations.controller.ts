@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import status from 'http-status'
 import mongoose, { Schema } from 'mongoose'
-import { CHAT_TYPE } from '~/constants/enums'
+import { CHAT_TYPE, MESSAGE_STATUS } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import { emitSocketEvent } from '~/lib/socket'
 import ChatModel from '~/models/chat.model'
@@ -223,68 +223,45 @@ class ConversationsController {
   }
 
   async markChatAsRead(req: Request, res: Response, next: NextFunction) {
-    const { chatId } = req.params
-    const userId = req.context?.user?._id
-
-    if (!chatId) {
-      return next(
-        new AppError({
-          status: status.BAD_REQUEST,
-          message: 'Chat ID is required'
-        })
-      )
-    }
-
     try {
-      // Tìm chat
-      const chat = await ChatModel.findOne({ _id: chatId, participants: userId })
-      
+      const userId = req.context?.user?._id
+      const { chatId } = req.params
+
+      // Tìm cuộc trò chuyện
+      const chat = await ChatModel.findById(chatId)
       if (!chat) {
-        return next(
-          new AppError({
-            status: status.NOT_FOUND,
-            message: 'Chat not found'
-          })
-        )
-      }
-      
-      // Kiểm tra xem tin nhắn cuối cùng có phải của người dùng hiện tại không
-      if (chat.lastMessage) {
-        const lastMessage = await MessageModel.findById(chat.lastMessage)
-        
-        // Nếu tin nhắn cuối cùng là của người dùng hiện tại, không cần đánh dấu đã đọc
-        if (lastMessage && lastMessage.senderId.toString() === userId.toString()) {
-          // Vẫn trả về thành công nhưng không thay đổi trạng thái
-          return res.json(
-            new AppSuccess({
-              message: 'No need to mark as read for own messages',
-              data: chat
-            })
-          )
-        }
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
       }
 
-      // Cập nhật trạng thái read của chat
+      // Kiểm tra xem người dùng có trong cuộc trò chuyện không
+      if (!chat.participants.includes(userId)) {
+        throw new AppError({ message: 'Bạn không có quyền truy cập cuộc trò chuyện này', status: 403 })
+      }
+
+      // Đánh dấu cuộc trò chuyện là đã đọc
       chat.read = true
       await chat.save()
 
-      // Đánh dấu tất cả tin nhắn trong chat là đã đọc
+      // Đánh dấu tất cả tin nhắn trong cuộc trò chuyện là đã đọc
+      // Chỉ đánh dấu tin nhắn của người khác gửi, không phải tin nhắn của chính mình
       await MessageModel.updateMany(
         { 
           chatId, 
-          senderId: { $ne: userId } // Chỉ đánh dấu tin nhắn không phải của người dùng hiện tại
+          senderId: { $ne: userId }, // Không phải tin nhắn của người dùng hiện tại
+          status: { $ne: MESSAGE_STATUS.SEEN } // Chưa được đánh dấu là đã đọc
         },
-        { status: MESSAGE_STATUS.SEEN }
+        { $set: { status: MESSAGE_STATUS.SEEN } }
       )
 
-      res.json(
-        new AppSuccess({
-          message: 'Chat marked as read',
-          data: chat
-        })
-      )
+      // Emit sự kiện MESSAGE_READ để thông báo cho tất cả người dùng trong cuộc trò chuyện
+      req.io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
+        chatId,
+        messageIds: [], // Không cần gửi messageIds cụ thể, chỉ cần chatId
+        readBy: userId
+      })
+
+      res.json(new AppSuccess({ message: 'Đánh dấu cuộc trò chuyện là đã đọc thành công' }))
     } catch (error) {
-      console.error('Error marking chat as read:', error)
       next(error)
     }
   }

@@ -298,6 +298,8 @@ const initSocket = async (server: HttpServer) => {
     socket.on(SOCKET_EVENTS.MARK_AS_READ, async (data) => {
       try {
         const { chatId, messageIds } = data
+        // Lấy userId từ socket.handshake.auth đã được set trong middleware
+        const userId = socket.handshake.auth.userId
 
         if (!chatId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
           return socket.emit(SOCKET_EVENTS.ERROR, {
@@ -305,52 +307,19 @@ const initSocket = async (server: HttpServer) => {
           })
         }
 
+        console.log(`User ${userId} marking messages as read:`, { chatId, messageIds })
+
         // Cập nhật trạng thái tin nhắn trong database
         await MessageModel.updateMany(
           { _id: { $in: messageIds }, chatId },
           { $set: { status: MESSAGE_STATUS.SEEN } }
         )
 
-        // Lấy thông tin về chat để biết người gửi tin nhắn
-        const chat = await ChatModel.findById(chatId)
-        if (!chat) {
-          return socket.emit(SOCKET_EVENTS.ERROR, { message: 'Chat not found' })
-        }
-
-        // Lấy thông tin về các tin nhắn để biết người gửi
-        const messages = await MessageModel.find({ _id: { $in: messageIds } })
-
-        // Nhóm tin nhắn theo người gửi
-        const messagesBySender = messages.reduce(
-          (acc, message) => {
-            const senderId = message.senderId.toString()
-            if (!acc[senderId]) {
-              acc[senderId] = []
-            }
-            acc[senderId].push(
-              typeof message._id === 'object' && message._id !== null && 'toString' in message._id
-                ? message._id.toString()
-                : String(message._id)
-            )
-            return acc
-          },
-          {} as Record<string, string[]>
+        // Cập nhật trạng thái đã đọc của cuộc trò chuyện
+        await ChatModel.findOneAndUpdate(
+          { _id: chatId, participants: userId },
+          { read: true }
         )
-
-        // Gửi thông báo đến từng người gửi
-        for (const [senderId, senderMessageIds] of Object.entries(messagesBySender)) {
-          // Chỉ gửi thông báo nếu người gửi không phải là người đang đọc
-          if (senderId !== userId) {
-            const senderSocketId = users.get(senderId)
-            if (senderSocketId) {
-              io.to(senderSocketId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-                chatId,
-                messageIds: senderMessageIds,
-                readBy: userId
-              })
-            }
-          }
-        }
 
         // Gửi thông báo đến tất cả người trong room
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
@@ -358,6 +327,8 @@ const initSocket = async (server: HttpServer) => {
           messageIds,
           readBy: userId
         })
+
+        console.log(`Emitted MESSAGE_READ event to room ${chatId}`)
       } catch (error) {
         console.error('MARK_AS_READ error:', error)
         socket.emit(SOCKET_EVENTS.ERROR, { message: 'Đánh dấu tin nhắn đã đọc thất bại' })

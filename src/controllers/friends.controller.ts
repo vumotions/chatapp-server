@@ -103,7 +103,7 @@ class FriendsController {
       if (receiverSocketId) {
         console.log(`Emitting notification to user ${receiverId} with socketId ${receiverSocketId}`)
 
-        // Đảm bảo thông tin người gửi đầy đủ
+        // Chuẩn hóa cấu trúc thông báo - luôn gửi thông tin người gửi trong trường senderId
         const notificationToSend = {
           ...notification.toObject(),
           senderId: {
@@ -118,7 +118,7 @@ class FriendsController {
           JSON.stringify(notificationToSend, null, 2)
         )
 
-        // Gửi thông báo qua socket với cấu trúc đã được điều chỉnh
+        // Gửi thông báo qua socket với cấu trúc đã được chuẩn hóa
         io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notificationToSend)
 
         console.log('Notification sent successfully')
@@ -186,11 +186,18 @@ class FriendsController {
           `Emitting friend acceptance notification to user ${friendRequest.senderId} with socketId ${receiverSocketId}`
         )
 
-        // Gửi thông báo qua socket
-        io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
+        // Chuẩn hóa cấu trúc thông báo - luôn gửi thông tin người gửi trong trường senderId
+        const notificationToSend = {
           ...notification.toObject(),
-          sender: accepter
-        })
+          senderId: {
+            _id: accepter?._id,
+            name: accepter?.name,
+            avatar: accepter?.avatar
+          }
+        }
+
+        // Gửi thông báo qua socket với cấu trúc đã được chuẩn hóa
+        io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notificationToSend)
 
         console.log('Notification sent successfully')
       } else {
@@ -362,20 +369,20 @@ class FriendsController {
   async getFriendsList(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req.context?.user as IUser)._id as string
-      const searchQuery = req.query.search as string || ''
-      
+      const searchQuery = (req.query.search as string) || ''
+
       // Lấy danh sách bạn bè
       const friends = await FriendModel.find({ userId }).populate('friendId', 'name avatar')
-      
+
       // Lọc bạn bè theo tìm kiếm nếu có searchQuery
       let filteredFriends = friends.map((f) => f.friendId)
-      
+
       if (searchQuery) {
-        filteredFriends = filteredFriends.filter((friend: any) => 
+        filteredFriends = filteredFriends.filter((friend: any) =>
           friend.name.toLowerCase().includes(searchQuery.toLowerCase())
         )
       }
-      
+
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách bạn bè thành công',

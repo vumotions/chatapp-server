@@ -99,7 +99,7 @@ const initSocket = async (server: HttpServer) => {
     // Tham gia vào room cá nhân để nhận thông báo
     socket.join(userId)
     console.log(`User ${userId} joined personal room ${userId}`)
-    
+
     // Thêm log để kiểm tra các room
     console.log(`Socket ${socket.id} rooms:`, Array.from(socket.rooms))
 
@@ -111,19 +111,19 @@ const initSocket = async (server: HttpServer) => {
     socket.on(SOCKET_EVENTS.CHECK_ONLINE, (checkUserId, callback) => {
       try {
         const isOnline = users.has(checkUserId)
-        
+
         // Nếu người dùng đang online, trả về thời gian hiện tại
         if (isOnline) {
           callback(true, new Date().toISOString())
           return
         }
-        
+
         // Lấy thời gian hoạt động gần nhất từ lastActiveMap
         const lastActive = lastActiveMap.get(checkUserId)
-        
+
         // Nếu không có trong lastActiveMap (chưa từng online), trả về một giá trị đặc biệt
         if (!lastActive) {
-          callback(false, 'never')  // Sử dụng 'never' để đánh dấu chưa từng online
+          callback(false, 'never') // Sử dụng 'never' để đánh dấu chưa từng online
         } else {
           callback(false, lastActive)
         }
@@ -198,8 +198,8 @@ const initSocket = async (server: HttpServer) => {
 
         // Cập nhật chat
         chat.lastMessage = message._id as ObjectId
-        chat.read = false 
-        chat.set('updatedAt', new Date()) 
+        chat.read = false
+        chat.set('updatedAt', new Date())
         await chat.save()
 
         // Join room
@@ -215,8 +215,8 @@ const initSocket = async (server: HttpServer) => {
         // Tạo thông báo cho tất cả người tham gia trừ người gửi
         for (const participantId of chat.participants) {
           // Bỏ qua người gửi tin nhắn
-          if (participantId.toString() === userId.toString()) continue;
-          
+          if (participantId.toString() === userId.toString()) continue
+
           // Tạo thông báo
           const notification = await NotificationModel.create({
             userId: participantId,
@@ -228,10 +228,10 @@ const initSocket = async (server: HttpServer) => {
               chatName: chat.name || null,
               isGroup: chat.type === CHAT_TYPE.GROUP
             }
-          });
+          })
 
           // Gửi thông báo qua socket
-          const recipientSocketId = users.get(participantId.toString());
+          const recipientSocketId = users.get(participantId.toString())
           if (recipientSocketId) {
             io.to(recipientSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
               ...notification.toObject(),
@@ -240,7 +240,7 @@ const initSocket = async (server: HttpServer) => {
                 name: socket.handshake.auth.decodedAccessToken.name,
                 avatar: socket.handshake.auth.decodedAccessToken.avatar
               }
-            });
+            })
           }
         }
       } catch (error) {
@@ -278,21 +278,23 @@ const initSocket = async (server: HttpServer) => {
     })
 
     socket.on('JOIN_ROOM', (roomId) => {
-      console.log(`User ${socket.data.userId || socket.id} joining room: ${roomId}`);
-      socket.join(roomId);
-      console.log(`Rooms for socket ${socket.id}:`, Array.from(socket.rooms));
-      
+      console.log(`User ${socket.data.userId || socket.id} joining room: ${roomId}`)
+      socket.join(roomId)
+      console.log(`Rooms for socket ${socket.id}:`, Array.from(socket.rooms))
+
       // Thông báo cho các client khác trong room biết có người mới tham gia
       socket.to(roomId).emit('USER_JOINED', {
         userId: socket.data.userId,
         roomId
-      });
-    });
+      })
+    })
 
     socket.on('READY_FOR_MESSAGES', (roomId) => {
-      console.log(`User ${socket.data.userId || socket.id} is ready for messages in room: ${roomId}`);
+      console.log(
+        `User ${socket.data.userId || socket.id} is ready for messages in room: ${roomId}`
+      )
       // Có thể gửi lại tin nhắn gần nhất nếu cần
-    });
+    })
 
     // Handle marking messages as read
     socket.on(SOCKET_EVENTS.MARK_AS_READ, async (data) => {
@@ -309,23 +311,46 @@ const initSocket = async (server: HttpServer) => {
 
         console.log(`User ${userId} marking messages as read:`, { chatId, messageIds })
 
-        // Cập nhật trạng thái tin nhắn trong database
+        // Lấy thông tin chat để kiểm tra loại chat
+        const chat = await ChatModel.findById(chatId)
+        if (!chat) {
+          return socket.emit(SOCKET_EVENTS.ERROR, { message: 'Chat not found' })
+        }
+
+        // Cập nhật readBy cho tin nhắn
         await MessageModel.updateMany(
           { _id: { $in: messageIds }, chatId },
-          { $set: { status: MESSAGE_STATUS.SEEN } }
+          { $addToSet: { readBy: userId } }
         )
 
-        // Cập nhật trạng thái đã đọc của cuộc trò chuyện
-        await ChatModel.findOneAndUpdate(
-          { _id: chatId, participants: userId },
-          { read: true }
-        )
+        // Lấy tin nhắn sau khi cập nhật để kiểm tra số người đã đọc
+        const messages = await MessageModel.find({ _id: { $in: messageIds }, chatId })
+
+        // Cập nhật trạng thái tin nhắn dựa trên số người đã đọc
+        for (const message of messages) {
+          const totalParticipants = chat.participants.length
+          const readCount = message.readBy.length
+
+          // Nếu tất cả thành viên đã đọc, cập nhật status thành SEEN
+          if (readCount === totalParticipants) {
+            message.status = MESSAGE_STATUS.SEEN
+            await message.save()
+          }
+        }
+
+        // Cập nhật trạng thái đã đọc của cuộc trò chuyện cho người dùng hiện tại
+        await ChatModel.findOneAndUpdate({ _id: chatId, participants: userId }, { read: true })
 
         // Gửi thông báo đến tất cả người trong room
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
           messageIds,
-          readBy: userId
+          readBy: userId,
+          messages: messages.map((msg) => ({
+            _id: msg._id,
+            status: msg.status,
+            readBy: msg.readBy
+          }))
         })
 
         console.log(`Emitted MESSAGE_READ event to room ${chatId}`)
@@ -403,8 +428,8 @@ const initSocket = async (server: HttpServer) => {
               createdAt: reaction.createdAt
             }
           }
-          
-          return reaction;
+
+          return reaction
         })
 
         // Gửi thông báo đến tất cả người trong room
@@ -468,55 +493,55 @@ const initSocket = async (server: HttpServer) => {
     })
 
     socket.on('TEST_DELETE_MESSAGE', (data) => {
-      const { messageId, chatId } = data;
-      console.log(`Received TEST_DELETE_MESSAGE: ${messageId} in chat ${chatId}`);
-      
+      const { messageId, chatId } = data
+      console.log(`Received TEST_DELETE_MESSAGE: ${messageId} in chat ${chatId}`)
+
       // Gửi sự kiện MESSAGE_DELETED đến tất cả clients
       io.emit('MESSAGE_DELETED', {
         messageId,
         chatId
-      });
-      
+      })
+
       // Gửi sự kiện đến room cụ thể
       io.to(chatId).emit('MESSAGE_DELETED', {
         messageId,
         chatId
-      });
-      
-      console.log('Test MESSAGE_DELETED event emitted');
-    });
+      })
+
+      console.log('Test MESSAGE_DELETED event emitted')
+    })
 
     socket.on('CHECK_NEW_MESSAGES', async (data) => {
       try {
-        const { chatId, latestMessageId } = data;
-        console.log(`Checking for new messages in chat ${chatId} after message ${latestMessageId}`);
-        
+        const { chatId, latestMessageId } = data
+        console.log(`Checking for new messages in chat ${chatId} after message ${latestMessageId}`)
+
         // Tìm các tin nhắn mới hơn latestMessageId
         const newMessages = await MessageModel.find({
           chatId,
           _id: { $gt: latestMessageId }
         })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .populate('senderId', 'name avatar')
-        .setOptions({ strictPopulate: false }) // Thêm tùy chọn này nếu cần
-        .lean();
-        
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .populate('senderId', 'name avatar')
+          .setOptions({ strictPopulate: false }) // Thêm tùy chọn này nếu cần
+          .lean()
+
         if (newMessages.length > 0) {
-          console.log(`Found ${newMessages.length} new messages to sync`);
-          
+          console.log(`Found ${newMessages.length} new messages to sync`)
+
           // Gửi tin nhắn mới cho client
           socket.emit('SYNC_MESSAGES', {
             messages: newMessages,
             chatId
-          });
+          })
         } else {
-          console.log('No new messages to sync');
+          console.log('No new messages to sync')
         }
       } catch (error) {
-        console.error('Error checking for new messages:', error);
+        console.error('Error checking for new messages:', error)
       }
-    });
+    })
 
     socket.on('error', (error) => {
       console.error('Socket error:', error)
@@ -529,13 +554,13 @@ const initSocket = async (server: HttpServer) => {
       // Lưu thời gian hoạt động gần nhất trước khi xóa khỏi danh sách online
       const currentTime = new Date().toISOString()
       lastActiveMap.set(userId, currentTime)
-      
+
       // Xóa khỏi danh sách users online
       users.delete(userId)
-      
+
       console.log(`User ${userId} disconnected at ${currentTime}`)
       console.log('Remaining online users:', Array.from(users.entries()))
-      
+
       // Thông báo cho tất cả người dùng biết người dùng này đã offline
       io.emit(SOCKET_EVENTS.USER_OFFLINE, userId, lastActiveMap.get(userId))
       console.log(`Broadcast user ${userId} is offline`)

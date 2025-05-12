@@ -29,8 +29,8 @@ class FriendsController {
       }
 
       // Kiểm tra đã gửi lời mời chưa (chỉ kiểm tra lời mời PENDING)
-      const isRequested = await FriendRequestModel.findOne({ 
-        senderId: userId, 
+      const isRequested = await FriendRequestModel.findOne({
+        senderId: userId,
         receiverId,
         status: FRIEND_REQUEST_STATUS.PENDING
       })
@@ -40,13 +40,13 @@ class FriendsController {
 
       // Lấy thông tin người gửi
       const sender = await UserModel.findById(userId).select('_id name avatar').lean()
-      
+
       if (!sender) {
         throw new AppError({ message: 'Không tìm thấy thông tin người gửi', status: 500 })
       }
 
-      let friendRequest;
-      let existingNotification;
+      let friendRequest
+      let existingNotification
 
       // Kiểm tra xem có lời mời bị từ chối trước đó không
       const rejectedRequest = await FriendRequestModel.findOne({
@@ -59,34 +59,34 @@ class FriendsController {
       if (rejectedRequest) {
         rejectedRequest.status = FRIEND_REQUEST_STATUS.PENDING
         await rejectedRequest.save()
-        friendRequest = rejectedRequest;
-        
+        friendRequest = rejectedRequest
+
         // Kiểm tra xem đã có thông báo cho lời mời này chưa
         existingNotification = await NotificationModel.findOne({
           userId: receiverId,
           senderId: userId,
           type: NOTIFICATION_TYPE.FRIEND_REQUEST,
           relatedId: rejectedRequest._id
-        });
+        })
       } else {
         // Tạo mới lời mời kết bạn
         friendRequest = await FriendRequestModel.create({
           senderId: userId,
           receiverId,
           status: FRIEND_REQUEST_STATUS.PENDING
-        });
+        })
       }
 
       // Xử lý thông báo
-      let notification;
-      
+      let notification
+
       if (existingNotification) {
         // Nếu đã có thông báo, cập nhật lại trạng thái
-        existingNotification.processed = false;
-        existingNotification.read = false;
-        existingNotification.createdAt = new Date(); // Cập nhật thời gian để hiển thị mới nhất
-        await existingNotification.save();
-        notification = existingNotification;
+        existingNotification.processed = false
+        existingNotification.read = false
+        existingNotification.set('createdAt', new Date())
+        await existingNotification.save()
+        notification = existingNotification
       } else {
         // Tạo mới thông báo nếu chưa có
         notification = await NotificationModel.create({
@@ -94,7 +94,7 @@ class FriendsController {
           senderId: userId,
           type: NOTIFICATION_TYPE.FRIEND_REQUEST,
           relatedId: friendRequest._id
-        });
+        })
       }
 
       // Lấy socketId của người nhận
@@ -102,7 +102,7 @@ class FriendsController {
 
       if (receiverSocketId) {
         console.log(`Emitting notification to user ${receiverId} with socketId ${receiverSocketId}`)
-        
+
         // Đảm bảo thông tin người gửi đầy đủ
         const notificationToSend = {
           ...notification.toObject(),
@@ -111,19 +111,22 @@ class FriendsController {
             name: sender.name,
             avatar: sender.avatar
           }
-        };
+        }
 
-        console.log('Notification structure before sending:', JSON.stringify(notificationToSend, null, 2));
+        console.log(
+          'Notification structure before sending:',
+          JSON.stringify(notificationToSend, null, 2)
+        )
 
         // Gửi thông báo qua socket với cấu trúc đã được điều chỉnh
-        io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notificationToSend);
-        
+        io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, notificationToSend)
+
         console.log('Notification sent successfully')
       } else {
         console.log(`User ${receiverId} is not online, notification will be shown when they log in`)
       }
 
-      const message = rejectedRequest ? 'Đã gửi lại lời mời kết bạn' : 'Đã gửi lời mời kết bạn';
+      const message = rejectedRequest ? 'Đã gửi lại lời mời kết bạn' : 'Đã gửi lời mời kết bạn'
       res.json(new AppSuccess({ message, data: null }))
     } catch (error) {
       next(error)
@@ -179,17 +182,21 @@ class FriendsController {
       const receiverSocketId = users.get(String(friendRequest.senderId))
 
       if (receiverSocketId) {
-        console.log(`Emitting friend acceptance notification to user ${friendRequest.senderId} with socketId ${receiverSocketId}`)
-        
+        console.log(
+          `Emitting friend acceptance notification to user ${friendRequest.senderId} with socketId ${receiverSocketId}`
+        )
+
         // Gửi thông báo qua socket
         io.to(receiverSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
           ...notification.toObject(),
           sender: accepter
         })
-        
+
         console.log('Notification sent successfully')
       } else {
-        console.log(`User ${friendRequest.senderId} is not online, notification will be shown when they log in`)
+        console.log(
+          `User ${friendRequest.senderId} is not online, notification will be shown when they log in`
+        )
       }
 
       res.json(new AppSuccess({ message: 'Đã chấp nhận lời mời kết bạn', data: null }))
@@ -231,7 +238,7 @@ class FriendsController {
       const userFriendIds = userFriends.map((f) => f.friendId.toString())
 
       // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
-      const allUsers = await UserModel.find({ 
+      const allUsers = await UserModel.find({
         _id: { $nin: excludeIds },
         verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
       })
@@ -275,7 +282,7 @@ class FriendsController {
       )
 
       // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
-      const receivedUsers = await UserModel.find({ 
+      const receivedUsers = await UserModel.find({
         _id: { $in: receivedIds },
         verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
       })
@@ -308,25 +315,22 @@ class FriendsController {
       const { userId: senderId } = req.body
 
       // Tìm lời mời kết bạn
-      const request = await FriendRequestModel.findOne({ 
-        senderId, 
-        receiverId: userId, 
-        status: FRIEND_REQUEST_STATUS.PENDING 
+      const request = await FriendRequestModel.findOne({
+        senderId,
+        receiverId: userId,
+        status: FRIEND_REQUEST_STATUS.PENDING
       })
-      
+
       if (!request) {
         throw new AppError({ message: 'Không tìm thấy lời mời', status: 404 })
       }
-      
+
       // Cập nhật trạng thái thành REJECTED thay vì xóa
       request.status = FRIEND_REQUEST_STATUS.REJECTED
       await request.save()
 
       // Cập nhật thông báo liên quan là đã xử lý
-      await NotificationModel.updateMany(
-        { relatedId: request._id },
-        { $set: { processed: true } }
-      )
+      await NotificationModel.updateMany({ relatedId: request._id }, { $set: { processed: true } })
 
       res.json(new AppSuccess({ message: 'Đã từ chối lời mời kết bạn', data: null }))
     } catch (error) {
@@ -407,16 +411,19 @@ class FriendsController {
       }
 
       // Kiểm tra đã là bạn bè chưa
-      const isFriend = await FriendModel.findOne({ 
-        userId, 
-        friendId 
+      const isFriend = await FriendModel.findOne({
+        userId,
+        friendId
       })
 
       if (isFriend) {
-        return res.json(new AppSuccess({ 
-          message: 'Lấy trạng thái kết bạn thành công', 
-          data: { status: FRIEND_REQUEST_STATUS.ACCEPTED } 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'Lấy trạng thái kết bạn thành công',
+            data: { status: FRIEND_REQUEST_STATUS.ACCEPTED }
+          })
+        )
+        return
       }
 
       // Kiểm tra đã gửi lời mời kết bạn chưa
@@ -427,10 +434,13 @@ class FriendsController {
       })
 
       if (sentRequest) {
-        return res.json(new AppSuccess({ 
-          message: 'Lấy trạng thái kết bạn thành công', 
-          data: { status: FRIEND_REQUEST_STATUS.PENDING } 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'Lấy trạng thái kết bạn thành công',
+            data: { status: FRIEND_REQUEST_STATUS.PENDING }
+          })
+        )
+        return
       }
 
       // Kiểm tra đã nhận lời mời kết bạn chưa
@@ -441,17 +451,22 @@ class FriendsController {
       })
 
       if (receivedRequest) {
-        return res.json(new AppSuccess({ 
-          message: 'Lấy trạng thái kết bạn thành công', 
-          data: { status: 'RECEIVED' } 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'Lấy trạng thái kết bạn thành công',
+            data: { status: 'RECEIVED' }
+          })
+        )
+        return
       }
 
       // Không có mối quan hệ
-      return res.json(new AppSuccess({ 
-        message: 'Lấy trạng thái kết bạn thành công', 
-        data: { status: null } 
-      }))
+      res.json(
+        new AppSuccess({
+          message: 'Lấy trạng thái kết bạn thành công',
+          data: { status: null }
+        })
+      )
     } catch (error) {
       next(error)
     }

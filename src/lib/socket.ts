@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from 'http'
 import status from 'http-status'
-import { ObjectId, Schema, Types } from 'mongoose'
+import { ObjectId, Types } from 'mongoose'
 import { Server } from 'socket.io'
 import { env } from '~/config/env'
 import { CHAT_TYPE, MESSAGE_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
@@ -317,42 +317,58 @@ const initSocket = async (server: HttpServer) => {
           return socket.emit(SOCKET_EVENTS.ERROR, { message: 'Chat not found' })
         }
 
-        // Cập nhật readBy cho tin nhắn
-        await MessageModel.updateMany(
-          { _id: { $in: messageIds }, chatId },
-          { $addToSet: { readBy: userId } }
-        )
-
-        // Lấy tin nhắn sau khi cập nhật để kiểm tra số người đã đọc
-        const messages = await MessageModel.find({ _id: { $in: messageIds }, chatId })
-
-        // Cập nhật trạng thái tin nhắn dựa trên số người đã đọc
+        // Lấy danh sách người tham gia
+        const participants = chat.participants.map(p => p.toString())
+        
+        // Cập nhật readBy cho các tin nhắn
+        const messages = await MessageModel.find({ _id: { $in: messageIds } })
+        const updatedMessages = []
+        
         for (const message of messages) {
-          const totalParticipants = chat.participants.length
-          const readCount = message.readBy.length
-
-          // Nếu tất cả thành viên đã đọc, cập nhật status thành SEEN
-          if (readCount === totalParticipants) {
-            message.status = MESSAGE_STATUS.SEEN
+          // Chỉ cập nhật nếu người dùng chưa đọc tin nhắn
+          if (!message.readBy.includes(userId)) {
+            message.readBy.push(userId)
+            
+            // Đếm số người đã đọc tin nhắn (không tính người gửi)
+            const readersCount = message.readBy.filter(
+              reader => reader.toString() !== message.senderId.toString()
+            ).length
+            
+            // Đếm số người nhận tin nhắn (không tính người gửi)
+            const receiversCount = participants.filter(
+              p => p !== message.senderId.toString()
+            ).length
+            
+            console.log(`Message ${message._id}: ${readersCount}/${receiversCount} readers`)
+            
+            // Nếu tất cả người nhận đã đọc tin nhắn, đánh dấu là SEEN
+            if (readersCount >= receiversCount) {
+              message.status = MESSAGE_STATUS.SEEN
+            } else {
+              // Nếu chưa tất cả đã đọc, đánh dấu là DELIVERED
+              message.status = MESSAGE_STATUS.DELIVERED
+            }
+            
             await message.save()
+            updatedMessages.push(message)
           }
         }
-
+        
         // Cập nhật trạng thái đã đọc của cuộc trò chuyện cho người dùng hiện tại
         await ChatModel.findOneAndUpdate({ _id: chatId, participants: userId }, { read: true })
-
+        
         // Gửi thông báo đến tất cả người trong room
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
           messageIds,
           readBy: userId,
-          messages: messages.map((msg) => ({
+          messages: updatedMessages.map((msg) => ({
             _id: msg._id,
             status: msg.status,
             readBy: msg.readBy
           }))
         })
-
+        
         console.log(`Emitted MESSAGE_READ event to room ${chatId}`)
       } catch (error) {
         console.error('MARK_AS_READ error:', error)

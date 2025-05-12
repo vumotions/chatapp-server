@@ -208,6 +208,11 @@ class FriendsController {
   async getFriendSuggestions(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req.context?.user as IUser)._id as string
+      const page = parseInt(req.query.page as string) || 1
+      const limit = parseInt(req.query.limit as string) || 10
+
+      // Tính toán skip cho phân trang
+      const skip = (page - 1) * limit
 
       // Lấy tất cả user đã là bạn
       const friends = await FriendModel.find({ userId }).select('friendId')
@@ -237,13 +242,20 @@ class FriendsController {
       const userFriends = await FriendModel.find({ userId }).select('friendId')
       const userFriendIds = userFriends.map((f) => f.friendId.toString())
 
-      // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
+      // Đếm tổng số người dùng thỏa mãn điều kiện để tính tổng số trang
+      const totalCount = await UserModel.countDocuments({
+        _id: { $nin: excludeIds },
+        verify: USER_VERIFY_STATUS.VERIFIED
+      })
+
+      // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH, có phân trang
       const allUsers = await UserModel.find({
         _id: { $nin: excludeIds },
-        verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
+        verify: USER_VERIFY_STATUS.VERIFIED
       })
         .select('_id name avatar')
-        .limit(10)
+        .skip(skip)
+        .limit(limit)
         .lean()
 
       // Tính mutualFriends và thêm trạng thái cho từng người
@@ -282,9 +294,10 @@ class FriendsController {
       )
 
       // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
+      // Không áp dụng phân trang cho những người đã gửi lời mời, luôn hiển thị họ ở đầu
       const receivedUsers = await UserModel.find({
         _id: { $in: receivedIds },
-        verify: USER_VERIFY_STATUS.VERIFIED // Sử dụng enum
+        verify: USER_VERIFY_STATUS.VERIFIED
       })
         .select('_id name avatar')
         .lean()
@@ -300,7 +313,15 @@ class FriendsController {
 
       res.json(
         new AppSuccess({
-          data: combinedSuggestions,
+          data: {
+            suggestions: combinedSuggestions,
+            pagination: {
+              total: totalCount + receivedUsers.length,
+              page,
+              limit,
+              totalPages: Math.ceil((totalCount + receivedUsers.length) / limit)
+            }
+          },
           message: 'Lấy danh sách bạn bè gợi ý thành công'
         })
       )
@@ -339,14 +360,31 @@ class FriendsController {
   }
 
   async getFriendsList(req: Request, res: Response, next: NextFunction) {
-    const userId = (req.context?.user as IUser)._id as string
-    const friends = await FriendModel.find({ userId }).populate('friendId', 'name avatar')
-    res.json(
-      new AppSuccess({
-        message: 'Lấy danh sách bạn bè thành công',
-        data: friends.map((f) => f.friendId)
-      })
-    )
+    try {
+      const userId = (req.context?.user as IUser)._id as string
+      const searchQuery = req.query.search as string || ''
+      
+      // Lấy danh sách bạn bè
+      const friends = await FriendModel.find({ userId }).populate('friendId', 'name avatar')
+      
+      // Lọc bạn bè theo tìm kiếm nếu có searchQuery
+      let filteredFriends = friends.map((f) => f.friendId)
+      
+      if (searchQuery) {
+        filteredFriends = filteredFriends.filter((friend: any) => 
+          friend.name.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      }
+      
+      res.json(
+        new AppSuccess({
+          message: 'Lấy danh sách bạn bè thành công',
+          data: filteredFriends
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
   }
 
   async cancelFriendRequest(req: Request, res: Response, next: NextFunction) {

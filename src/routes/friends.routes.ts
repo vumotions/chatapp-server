@@ -39,7 +39,7 @@ friendsRoutes.post(
   friendsController.cancelFriendRequest
 )
 
-// Lấy danh sách bạn bè đã kết bạn
+// Lấy danh sách bạn bè đã kết bạn (thêm hỗ trợ tìm kiếm)
 friendsRoutes.get(
   '/',
   accessTokenValidator,
@@ -61,6 +61,13 @@ friendsRoutes.get(
   accessTokenValidator,
   verifiedUserValidator,
   friendsController.getFriendStatus
+)
+
+// Lấy danh sách bạn bè
+friendsRoutes.get(
+  '/list',
+  accessTokenValidator,
+  friendsController.getFriendsList
 )
 
 export default friendsRoutes

@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import friendsController from '../controllers/friends.controller'
 import { accessTokenValidator, verifiedUserValidator } from '~/middlewares/auth.middleware'
+import friendsController from '../controllers/friends.controller'
 
 const friendsRoutes = Router()
 
@@ -64,10 +64,14 @@ friendsRoutes.get(
 )
 
 // Lấy danh sách bạn bè
+friendsRoutes.get('/list', accessTokenValidator, friendsController.getFriendsList)
+
+// Thêm route tìm kiếm tất cả người dùng
 friendsRoutes.get(
-  '/list',
+  '/search',
   accessTokenValidator,
-  friendsController.getFriendsList
+  verifiedUserValidator,
+  friendsController.searchUsers
 )
 
 export default friendsRoutes

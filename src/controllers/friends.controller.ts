@@ -516,6 +516,52 @@ class FriendsController {
       next(error)
     }
   }
+
+  // Thêm phương thức searchUsers để tìm kiếm tất cả người dùng
+  async searchUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const searchQuery = (req.query.q as string) || ''
+      const userId = (req.context?.user as IUser)._id as string
+
+      // Nếu không có từ khóa tìm kiếm, trả về mảng rỗng
+      if (!searchQuery.trim()) {
+        res.json(
+          new AppSuccess({
+            message: 'Search results',
+            data: []
+          })
+        )
+        return
+      }
+
+      // Tìm kiếm người dùng theo tên hoặc username, chỉ lấy người dùng đã xác minh
+      // và không phải là chính người dùng hiện tại
+      const users = await UserModel.find({
+        $and: [
+          { _id: { $ne: userId } }, // Không phải là người dùng hiện tại
+          { verify: USER_VERIFY_STATUS.VERIFIED }, // Đã xác minh
+          {
+            $or: [
+              { name: { $regex: searchQuery, $options: 'i' } }, // Tìm theo tên
+              { username: { $regex: searchQuery, $options: 'i' } } // Tìm theo username
+            ]
+          }
+        ]
+      })
+        .select('_id name username avatar')
+        .limit(10)
+        .lean()
+
+      res.json(
+        new AppSuccess({
+          message: 'Search results',
+          data: users
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
 }
 
 const friendsController = new FriendsController()

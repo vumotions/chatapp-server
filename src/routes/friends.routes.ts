@@ -74,4 +74,12 @@ friendsRoutes.get(
   friendsController.searchUsers
 )
 
+// Thêm route để lấy danh sách bạn bè theo username
+friendsRoutes.get(
+  '/user/:username',
+  accessTokenValidator,
+  verifiedUserValidator,
+  friendsController.getFriendsByUsername
+)
+
 export default friendsRoutes

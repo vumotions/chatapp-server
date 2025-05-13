@@ -260,7 +260,7 @@ class FriendsController {
         _id: { $nin: excludeIds },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
-        .select('_id name avatar')
+        .select('_id name avatar username')
         .skip(skip)
         .limit(limit)
         .lean()
@@ -306,7 +306,7 @@ class FriendsController {
         _id: { $in: receivedIds },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
-        .select('_id name avatar')
+        .select('_id name avatar username') // Thêm username vào đây
         .lean()
 
       const receivedSuggestions = receivedUsers.map((user) => ({
@@ -556,6 +556,36 @@ class FriendsController {
         new AppSuccess({
           message: 'Search results',
           data: users
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Thêm controller mới để lấy danh sách bạn bè theo username
+  async getFriendsByUsername(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { username } = req.params
+      
+      // Tìm user theo username
+      const user = await UserModel.findOne({ username })
+      if (!user) {
+        throw new AppError({ message: 'Không tìm thấy người dùng', status: 404 })
+      }
+      
+      // Lấy danh sách bạn bè của user này
+      const friends = await FriendModel.find({ userId: user._id })
+        .populate('friendId', '_id name avatar username')
+        .lean()
+      
+      // Chuyển đổi kết quả để phù hợp với định dạng trả về
+      const friendsList = friends.map(friend => friend.friendId)
+      
+      res.json(
+        new AppSuccess({
+          message: 'Lấy danh sách bạn bè thành công',
+          data: friendsList
         })
       )
     } catch (error) {

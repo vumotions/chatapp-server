@@ -34,4 +34,12 @@ userRoutes.get(
   wrapRequestHandler(userController.getUserById)
 )
 
+// Get user by username
+userRoutes.get(
+  '/profile/:username',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(userController.getUserByUsername)
+)
+
 export default userRoutes

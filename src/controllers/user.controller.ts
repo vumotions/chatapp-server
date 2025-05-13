@@ -30,7 +30,7 @@ class UsersController {
 
     res.json(
       new AppSuccess({
-        message: 'Your email has been verified successfully',
+        message: 'Your profile has been updated successfully',
         data: omit(updatedUser?.toObject(), ['passwordHash'])
       })
     )
@@ -62,6 +62,41 @@ class UsersController {
             username: user.username,
             avatar: user.avatar,
             bio: user.bio
+          }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+  
+  // Add new method to get user by username
+  async getUserByUsername(req: Request, res: Response, next: NextFunction) {
+    const username = req.params.username
+
+    try {
+      const user = await userService.getUserByUsername(username)
+
+      if (!user) {
+        next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'User not found'
+          })
+        )
+        return
+      }
+
+      res.json(
+        new AppSuccess({
+          message: 'User found successfully',
+          data: {
+            _id: user._id,
+            name: user.name,
+            username: user.username,
+            avatar: user.avatar,
+            bio: user.bio,
+            coverPhoto: user.coverPhoto
           }
         })
       )

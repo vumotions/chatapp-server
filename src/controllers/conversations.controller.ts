@@ -166,12 +166,12 @@ class ConversationsController {
 
     // Tìm conversation
     let conversation = await ChatModel.findById(conversationId)
-      .populate('participants', 'name avatar')
+      .populate('participants', 'name avatar username')
       .populate({
         path: 'lastMessage',
         populate: {
           path: 'senderId',
-          select: 'name avatar'
+          select: 'name avatar username'
         }
       })
 
@@ -179,7 +179,7 @@ class ConversationsController {
     const messages = await MessageModel.find({ chatId: conversationId })
       .skip(skip)
       .limit(limit)
-      .populate('senderId', 'name avatar')
+      .populate('senderId', 'name avatar username')
       .sort({ createdAt: -1 })
 
     // Kiểm tra xem còn dữ liệu phía sau không
@@ -234,8 +234,11 @@ class ConversationsController {
       }
 
       // Kiểm tra xem người dùng có trong cuộc trò chuyện không
-      if (!chat.participants.some(id => id.toString() === userId?.toString())) {
-        throw new AppError({ message: 'Bạn không có quyền truy cập cuộc trò chuyện này', status: 403 })
+      if (!chat.participants.some((id) => id.toString() === userId?.toString())) {
+        throw new AppError({
+          message: 'Bạn không có quyền truy cập cuộc trò chuyện này',
+          status: 403
+        })
       }
 
       // Đánh dấu cuộc trò chuyện là đã đọc
@@ -245,8 +248,8 @@ class ConversationsController {
       // Đánh dấu tất cả tin nhắn trong cuộc trò chuyện là đã đọc
       // Chỉ đánh dấu tin nhắn của người khác gửi, không phải tin nhắn của chính mình
       await MessageModel.updateMany(
-        { 
-          chatId, 
+        {
+          chatId,
           senderId: { $ne: userId }, // Không phải tin nhắn của người dùng hiện tại
           status: { $ne: MESSAGE_STATUS.SEEN } // Chưa được đánh dấu là đã đọc
         },
@@ -263,7 +266,12 @@ class ConversationsController {
         })
       }
 
-      res.json(new AppSuccess({ message: 'Đánh dấu cuộc trò chuyện là đã đọc thành công', data: { success: true } }))
+      res.json(
+        new AppSuccess({
+          message: 'Đánh dấu cuộc trò chuyện là đã đọc thành công',
+          data: { success: true }
+        })
+      )
     } catch (error) {
       next(error)
     }
@@ -773,13 +781,13 @@ class ConversationsController {
       await updatedConversation.populate([
         {
           path: 'participants',
-          select: 'name avatar'
+          select: 'name avatar username'
         },
         {
           path: 'lastMessage',
           populate: {
             path: 'senderId',
-            select: 'name avatar'
+            select: 'name avatar username'
           }
         }
       ])
@@ -907,7 +915,9 @@ class ConversationsController {
 
       res.json(
         new AppSuccess({
-          message: message.isPinned ? 'Message pinned successfully' : 'Message unpinned successfully',
+          message: message.isPinned
+            ? 'Message pinned successfully'
+            : 'Message unpinned successfully',
           data: message
         })
       )
@@ -965,7 +975,7 @@ class ConversationsController {
         chatId,
         isPinned: true
       })
-        .populate('senderId', 'name avatar')
+        .populate('senderId', 'name avatar username')
         .sort({ createdAt: -1 }) // Sắp xếp theo thời gian mới nhất
 
       res.json(
@@ -1026,9 +1036,7 @@ class ConversationsController {
         createdBy: userId
       })
 
-      res.json(
-        new AppSuccess({ data: conversation, message: 'Tạo nhóm chat thành công' })
-      )
+      res.json(new AppSuccess({ data: conversation, message: 'Tạo nhóm chat thành công' }))
     } catch (error) {
       console.error('Error in createGroupConversation:', error)
       next(error)

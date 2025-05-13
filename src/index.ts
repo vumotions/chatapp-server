@@ -13,6 +13,7 @@ import friendsRoutes from './routes/friends.routes'
 import notificationRoutes from './routes/notifications.routes'
 import postsRoutes from './routes/posts.routes'
 import userRoutes from './routes/user.routes'
+import draftsRoutes from './routes/drafts.routes'
 
 const port = env.PORT
 
@@ -31,6 +32,7 @@ app.use('/api/chat', conversationsRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/friends', friendsRoutes)
 app.use('/api/posts', postsRoutes)
+app.use('/api/chat/drafts', draftsRoutes)
 
 app.use(defaultErrorHandler)
 
@@ -43,7 +45,7 @@ const server = http.createServer(app)
     const socketIo = await initSocket(server)
     app.set('io', socketIo)
     console.log('Socket.io initialized and stored in app')
-    
+
     // Khởi động server sau khi socket đã được khởi tạo
     server.listen(port, () => {
       console.log(`Server running at http://localhost:${port}`)

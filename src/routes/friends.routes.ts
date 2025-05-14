@@ -82,4 +82,12 @@ friendsRoutes.get(
   friendsController.getFriendsByUsername
 )
 
+// Lấy danh sách bạn bè với roles trong các nhóm chat
+friendsRoutes.get(
+  '/with-roles',
+  accessTokenValidator,
+  verifiedUserValidator,
+  friendsController.getFriendsWithRoles
+)
+
 export default friendsRoutes

@@ -49,6 +49,11 @@ export enum CHAT_TYPE {
   GROUP = 'GROUP'
 }
 
+export enum GROUP_TYPE {
+  PUBLIC = 'PUBLIC',
+  PRIVATE = 'PRIVATE'
+}
+
 export enum MESSAGE_STATUS {
   SENT = 'SENT',
   DELIVERED = 'DELIVERED',
@@ -70,5 +75,18 @@ export enum MESSAGE_TYPE {
 export enum FRIEND_REQUEST_STATUS {
   PENDING = 'PENDING',
   ACCEPTED = 'ACCEPTED',
+  REJECTED = 'REJECTED'
+}
+
+export enum MEMBER_ROLE {
+  OWNER = 'OWNER',
+  ADMIN = 'ADMIN',
+  MEMBER = 'MEMBER',
+  BOT = 'BOT'
+}
+
+export enum JOIN_REQUEST_STATUS {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
   REJECTED = 'REJECTED'
 }

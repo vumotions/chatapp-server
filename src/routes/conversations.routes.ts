@@ -123,4 +123,64 @@ conversationsRoutes.post(
   conversationsController.createGroupConversation
 )
 
+// Tạo và quản lý link mời
+conversationsRoutes.post(
+  '/group/:conversationId/invite-link',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.generateInviteLink)
+)
+
+conversationsRoutes.get(
+  '/group/join/:inviteLink',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.getGroupByInviteLink)
+)
+
+conversationsRoutes.post(
+  '/group/join/:inviteLink',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.joinGroupByInviteLink)
+)
+
+// Quản lý yêu cầu tham gia
+conversationsRoutes.get(
+  '/group/:conversationId/join-requests',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.getJoinRequests)
+)
+
+conversationsRoutes.post(
+  '/group/:conversationId/approve-request/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.approveJoinRequest)
+)
+
+conversationsRoutes.post(
+  '/group/:conversationId/reject-request/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.rejectJoinRequest)
+)
+
+// Xóa thành viên khỏi nhóm
+conversationsRoutes.delete(
+  '/group/:conversationId/members/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.removeGroupMember)
+)
+
+// Thêm thành viên vào nhóm
+conversationsRoutes.post(
+  '/group/:conversationId/members',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.addGroupMembers)
+)
+
 export default conversationsRoutes

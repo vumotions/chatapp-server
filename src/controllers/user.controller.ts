@@ -90,14 +90,7 @@ class UsersController {
       res.json(
         new AppSuccess({
           message: 'User found successfully',
-          data: {
-            _id: user._id,
-            name: user.name,
-            username: user.username,
-            avatar: user.avatar,
-            bio: user.bio,
-            coverPhoto: user.coverPhoto
-          }
+          data: omit(user.toObject(), ['passwordHash', 'provider', 'providerId'])
         })
       )
     } catch (error) {

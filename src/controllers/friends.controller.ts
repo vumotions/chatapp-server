@@ -1,16 +1,15 @@
-import { Request, Response, NextFunction } from 'express'
-import { FRIEND_REQUEST_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
+import { NextFunction, Request, Response } from 'express'
+import { FRIEND_REQUEST_STATUS, MEMBER_ROLE, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
+import SOCKET_EVENTS from '~/constants/socket-events'
+import { io, users } from '~/lib/socket'
+import ChatModel from '~/models/chat.model'
 import { AppError } from '~/models/error.model'
 import FriendRequestModel from '~/models/friend-request.model'
 import FriendModel from '~/models/friend.model'
 import NotificationModel from '~/models/notification.model'
 import { AppSuccess } from '~/models/success.model'
-import { IUser } from '~/models/user.model'
+import UserModel, { IUser } from '~/models/user.model'
 import notificationService from '~/services/notification.service'
-import UserModel from '~/models/user.model'
-import { io, users } from '~/lib/socket'
-import SOCKET_EVENTS from '~/constants/socket-events'
-import mongoose, { ObjectId } from 'mongoose'
 
 class FriendsController {
   async addFriend(req: Request, res: Response, next: NextFunction) {
@@ -586,6 +585,94 @@ class FriendsController {
         new AppSuccess({
           message: 'Lấy danh sách bạn bè thành công',
           data: friendsList
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Lấy danh sách bạn bè với roles trong các nhóm chat
+  async getFriendsWithRoles(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req.context?.user as IUser)._id as string
+      const { conversationId } = req.query
+      
+      if (!conversationId) {
+        throw new AppError({ message: 'Thiếu ID cuộc trò chuyện', status: 400 })
+      }
+      
+      // Lấy thông tin về cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+      
+      // Kiểm tra người dùng có trong cuộc trò chuyện không
+      const isMember = conversation.participants.some(p => p.toString() === userId.toString())
+      if (!isMember) {
+        throw new AppError({ message: 'Bạn không phải thành viên của cuộc trò chuyện này', status: 403 })
+      }
+      
+      // Lấy thông tin về vai trò của người dùng hiện tại
+      const currentMember = conversation.members?.find(
+        m => m.userId.toString() === userId.toString()
+      )
+      
+      const isAdmin = currentMember?.role === 'ADMIN' || currentMember?.role === 'OWNER'
+      
+      // Lấy danh sách tất cả thành viên trong nhóm
+      const memberIds = conversation.participants.map(p => p.toString())
+      
+      // Lấy thông tin chi tiết của tất cả thành viên
+      const allMembers = await UserModel.find({ _id: { $in: memberIds } })
+        .select('_id name avatar username')
+        .lean()
+      
+      // Kết hợp thông tin thành viên với vai trò trong nhóm
+      const membersWithRoles = allMembers.map(member => {
+        // Tìm thông tin thành viên trong nhóm
+        const memberInfo = conversation.members?.find(
+          m => m.userId.toString() === member._id.toString()
+        )
+        
+        return {
+          ...member,
+          inGroup: true,
+          role: memberInfo?.role || 'MEMBER',
+          permissions: isAdmin ? memberInfo?.permissions : null, // Chỉ trả về permissions nếu là admin
+          customTitle: memberInfo?.customTitle || null
+        }
+      })
+      
+      // Sắp xếp danh sách: Owner đầu tiên, sau đó là Admin, cuối cùng là Member
+      const sortedMembers = membersWithRoles.sort((a, b) => {
+        // Hàm helper để chuyển role thành số để so sánh
+        const getRoleWeight = (role: string) => {
+          switch (role) {
+            case 'OWNER': return 0;
+            case 'ADMIN': return 1;
+            default: return 2; // MEMBER hoặc các role khác
+          }
+        }
+        
+        const roleWeightA = getRoleWeight(a.role);
+        const roleWeightB = getRoleWeight(b.role);
+        
+        // So sánh theo role trước
+        if (roleWeightA !== roleWeightB) {
+          return roleWeightA - roleWeightB;
+        }
+        
+        // Nếu cùng role, sắp xếp theo tên
+        return a.name.localeCompare(b.name);
+      });
+      
+      res.json(
+        new AppSuccess({
+          message: 'Lấy danh sách thành viên với vai trò thành công',
+          data: sortedMembers,
+          isAdmin // Thêm trường isAdmin để client biết người dùng có quyền admin không
         })
       )
     } catch (error) {

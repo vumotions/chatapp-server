@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'http'
 import status from 'http-status'
 import { ObjectId, Types } from 'mongoose'
 import { Server } from 'socket.io'
+import { nanoid } from 'nanoid'
 import { env } from '~/config/env'
 import { CHAT_TYPE, MESSAGE_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
@@ -177,7 +178,7 @@ const initSocket = async (server: HttpServer) => {
             })
           }
 
-          finalChatId = chat._id.toString()
+          finalChatId = chat._id instanceof Types.ObjectId ? chat._id.toString() : String(chat._id)
         } else {
           chat = await ChatModel.findById(chatId)
           if (!chat) {

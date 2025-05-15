@@ -183,4 +183,60 @@ conversationsRoutes.post(
   wrapRequestHandler(conversationsController.addGroupMembers)
 )
 
+// Thêm route cho rời nhóm
+conversationsRoutes.post(
+  '/group/:conversationId/leave',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.leaveGroupConversation)
+)
+
+// Thêm route cho xóa nhóm (chỉ admin)
+conversationsRoutes.delete(
+  '/group/:conversationId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.deleteGroupConversation)
+)
+
+// Thêm route để kiểm tra quyền truy cập vào chat
+conversationsRoutes.get(
+  '/access/:conversationId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.checkChatAccess)
+)
+
+// Thêm route cho chuyển quyền chủ nhóm
+conversationsRoutes.post(
+  '/group/:conversationId/transfer-ownership',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.transferOwnership)
+)
+
+// Thêm route để cập nhật vai trò thành viên
+conversationsRoutes.put(
+  '/group/:conversationId/members/role',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.updateGroupMemberRole)
+)
+
+// Thêm route cho giải tán nhóm (chỉ owner)
+conversationsRoutes.delete(
+  '/group/:conversationId/disband',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.disbandGroup)
+)
+
+// Thêm route để cập nhật thông tin nhóm
+conversationsRoutes.put(
+  '/group/:conversationId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.updateGroupConversation)
+)
+
 export default conversationsRoutes

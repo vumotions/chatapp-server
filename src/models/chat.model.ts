@@ -10,6 +10,11 @@ export interface IChatMember {
   joinedAt: Date
 }
 
+export interface IFormerMember {
+  userId: Schema.Types.ObjectId
+  leftAt: Date
+}
+
 export interface IChat extends Document {
   userId: Schema.Types.ObjectId
   type: CHAT_TYPE
@@ -28,6 +33,7 @@ export interface IChat extends Document {
     requestedAt: Date
     status: string
   }>
+  formerMembers?: IFormerMember[]
 }
 
 const memberPermissionsSchema = new Schema(
@@ -90,6 +96,22 @@ const joinRequestSchema = new Schema(
   { _id: false }
 )
 
+// Định nghĩa schema cho formerMembers
+const formerMemberSchema = new Schema(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    leftAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  { _id: false }
+)
+
 const chatSchema = new Schema<IChat>(
   {
     userId: {
@@ -140,7 +162,8 @@ const chatSchema = new Schema<IChat>(
       }
     ],
     members: [chatMemberSchema],
-    pendingRequests: [joinRequestSchema]
+    pendingRequests: [joinRequestSchema],
+    formerMembers: [formerMemberSchema]
   },
   { 
     timestamps: true, 

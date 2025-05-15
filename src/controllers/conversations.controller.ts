@@ -1,16 +1,25 @@
 import { NextFunction, Request, Response } from 'express'
 import status from 'http-status'
 import mongoose, { Schema, Types } from 'mongoose'
-import { CHAT_TYPE, GROUP_TYPE, MEMBER_ROLE, MESSAGE_STATUS, MESSAGE_TYPE } from '~/constants/enums'
+import { nanoid } from 'nanoid'
+import { env } from '~/config/env'
+import {
+  CHAT_TYPE,
+  GROUP_TYPE,
+  JOIN_REQUEST_STATUS,
+  MEMBER_ROLE,
+  MESSAGE_STATUS,
+  MESSAGE_TYPE,
+  NOTIFICATION_TYPE
+} from '~/constants/enums'
+import SOCKET_EVENTS from '~/constants/socket-events'
+import { emitSocketEvent } from '~/lib/socket'
 import ChatModel from '~/models/chat.model'
 import { AppError } from '~/models/error.model'
 import MessageModel from '~/models/message.model'
+import NotificationModel from '~/models/notification.model'
 import { AppSuccess } from '~/models/success.model'
 import UserModel from '~/models/user.model'
-import { emitSocketEvent } from '~/lib/socket'
-import { nanoid } from 'nanoid'
-import SOCKET_EVENTS from '~/constants/socket-events'
-import { env } from '~/config/env'
 
 class ConversationsController {
   async getUserConversations(req: Request, res: Response, next: NextFunction) {
@@ -36,6 +45,7 @@ class ConversationsController {
       const query: any = {
         participants: userId,
         archived: { $ne: true } // Chỉ lấy những chat KHÔNG được archive
+        // Đã loại bỏ deletedFor
       }
 
       if (filter === 'unread') {
@@ -204,25 +214,77 @@ class ConversationsController {
   }
 
   async createConversation(req: Request, res: Response, next: NextFunction) {
-    const userId = req.context?.user?._id
-    const { participants } = req.body
+    try {
+      const userId = req.context?.user?._id
+      const { participants } = req.body
 
-    // Kiểm tra đã có conversation chưa
-    let conversation = await ChatModel.findOne({
-      participants: { $all: [userId, ...participants], $size: participants.length + 1 }
-    })
+      console.log('Creating conversation with participants:', participants)
+      console.log('Current user:', userId)
 
-    if (!conversation) {
-      conversation = await ChatModel.create({
-        userId,
-        participants: [userId, ...participants],
+      if (!userId) {
+        return next(
+          new AppError({
+            status: status.UNAUTHORIZED,
+            message: 'User ID is required'
+          })
+        )
+      }
+
+      if (!participants || !Array.isArray(participants) || participants.length === 0) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Participants are required'
+          })
+        )
+      }
+
+      // Kiểm tra đã có conversation chưa
+      let conversation = await ChatModel.findOne({
+        participants: { $all: [userId, ...participants], $size: participants.length + 1 },
         type: CHAT_TYPE.PRIVATE
       })
-    }
 
-    res.json(
-      new AppSuccess({ data: conversation, message: 'Create new conversation successfully' })
-    )
+      console.log('Existing conversation:', conversation)
+
+      if (!conversation) {
+        // Tạo conversation mới
+        conversation = await ChatModel.create({
+          userId,
+          participants: [userId, ...participants],
+          type: CHAT_TYPE.PRIVATE,
+          members: [
+            {
+              userId,
+              role: MEMBER_ROLE.MEMBER,
+              permissions: {},
+              joinedAt: new Date()
+            },
+            ...participants.map((participantId) => ({
+              userId: participantId,
+              role: MEMBER_ROLE.MEMBER,
+              permissions: {},
+              joinedAt: new Date()
+            }))
+          ]
+        })
+
+        console.log('New conversation created:', conversation)
+      }
+
+      // Populate participants để trả về thông tin đầy đủ
+      await conversation.populate('participants', 'name avatar')
+
+      res.json(
+        new AppSuccess({
+          data: conversation,
+          message: 'Create new conversation successfully'
+        })
+      )
+    } catch (error) {
+      console.error('Create conversation error:', error)
+      next(error)
+    }
   }
 
   async markChatAsRead(req: Request, res: Response, next: NextFunction) {
@@ -542,32 +604,30 @@ class ConversationsController {
   // Thêm phương thức xóa cuộc trò chuyện
   async deleteConversation(req: Request, res: Response, next: NextFunction) {
     try {
-      const { conversationId } = req.params
       const userId = req.context?.user?._id
+      const { conversationId } = req.params
+      // Thêm tham số để xác định hành động là xóa hoàn toàn hay chỉ ẩn
+      const { action = 'hide' } = req.query as { action?: 'hide' | 'delete' }
 
-      console.log('Deleting conversation:', conversationId, 'by user:', userId)
-
-      // Kiểm tra conversationId
-      if (!conversationId) {
-        return next(
+      if (!userId) {
+        next(
           new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Conversation ID is required'
+            status: status.UNAUTHORIZED,
+            message: 'Unauthorized'
           })
         )
+        return
       }
 
-      // Tìm cuộc trò chuyện
       const conversation = await ChatModel.findById(conversationId)
-
-      // Kiểm tra cuộc trò chuyện tồn tại
       if (!conversation) {
-        return next(
+        next(
           new AppError({
             status: status.NOT_FOUND,
             message: 'Conversation not found'
           })
         )
+        return
       }
 
       // Kiểm tra người dùng có trong cuộc trò chuyện không
@@ -576,30 +636,81 @@ class ConversationsController {
           (participant) => participant.toString() === userId?.toString()
         )
       ) {
-        return next(
+        next(
           new AppError({
             status: status.FORBIDDEN,
             message: 'You are not a participant in this conversation'
           })
         )
+        return
       }
 
-      // Xóa cuộc trò chuyện
-      await ChatModel.findByIdAndDelete(conversationId)
+      // Kiểm tra xem người dùng có phải là admin/owner không
+      const userMember = conversation.members?.find(
+        (member) => member.userId.toString() === userId.toString()
+      )
 
-      // Xóa tất cả tin nhắn trong cuộc trò chuyện
-      await MessageModel.deleteMany({ chatId: conversationId })
+      const isOwner = userMember?.role === MEMBER_ROLE.OWNER
 
-      // Thông báo cho tất cả người dùng trong cuộc trò chuyện
-      emitSocketEvent(conversationId, SOCKET_EVENTS.CONVERSATION_DELETED, {
-        conversationId,
-        deletedBy: userId
-      })
+      // Nếu là nhóm chat và action là delete, chỉ owner mới có quyền xóa hoàn toàn
+      if (conversation.type === CHAT_TYPE.GROUP && action === 'delete') {
+        if (!isOwner) {
+          next(
+            new AppError({
+              status: status.FORBIDDEN,
+              message: 'Chỉ chủ nhóm mới có thể xóa hoàn toàn nhóm chat'
+            })
+          )
+          return
+        }
+
+        // Xóa hoàn toàn nhóm chat
+        await ChatModel.findByIdAndDelete(conversationId)
+        await MessageModel.deleteMany({ chatId: conversationId })
+
+        // Thông báo cho tất cả người dùng trong cuộc trò chuyện
+        emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.CONVERSATION_DELETED, {
+          conversationId,
+          deletedBy: userId
+        })
+
+        res.json(
+          new AppSuccess({
+            data: { conversationId },
+            message: 'Nhóm đã được xóa hoàn toàn'
+          })
+        )
+        return
+      }
+
+      // Nếu chỉ là ẩn cuộc trò chuyện (action = 'hide')
+      if (conversation.type === CHAT_TYPE.GROUP) {
+        // Đối với nhóm chat, chỉ ẩn cuộc trò chuyện khỏi danh sách của người dùng
+        await ChatModel.findByIdAndUpdate(conversationId, {
+          $addToSet: { hiddenFor: userId }
+        })
+      } else {
+        // Đối với cuộc trò chuyện riêng tư
+        const otherParticipants = conversation.participants.filter(
+          (participant) => participant.toString() !== userId?.toString()
+        )
+
+        if (otherParticipants.length === 0) {
+          // Nếu không còn ai, xóa hoàn toàn cuộc trò chuyện
+          await ChatModel.findByIdAndDelete(conversationId)
+          await MessageModel.deleteMany({ chatId: conversationId })
+        } else {
+          // Nếu còn người khác, chỉ ẩn cuộc trò chuyện khỏi danh sách của người dùng hiện tại
+          await ChatModel.findByIdAndUpdate(conversationId, {
+            $addToSet: { hiddenFor: userId }
+          })
+        }
+      }
 
       res.json(
         new AppSuccess({
           data: { conversationId },
-          message: 'Conversation deleted successfully'
+          message: 'Cuộc trò chuyện đã được ẩn khỏi danh sách của bạn'
         })
       )
     } catch (error) {
@@ -695,6 +806,7 @@ class ConversationsController {
       const query: any = {
         participants: userId,
         archived: true
+        // Đã loại bỏ deletedFor
       }
 
       // Thêm điều kiện tìm kiếm nếu có
@@ -1019,13 +1131,17 @@ class ConversationsController {
         })
       }
 
+      // Đảm bảo nhóm riêng tư luôn yêu cầu phê duyệt
+      const finalRequireApproval =
+        groupType === GROUP_TYPE.PRIVATE ? true : requireApproval || false
+
       // Tạo nhóm chat mới
       const conversation = await ChatModel.create({
         userId, // Người tạo nhóm
         participants: [userId, ...participants],
         type: CHAT_TYPE.GROUP,
         groupType: groupType || GROUP_TYPE.PUBLIC,
-        requireApproval: requireApproval || false,
+        requireApproval: finalRequireApproval,
         name,
         avatar,
         members: [
@@ -1064,7 +1180,7 @@ class ConversationsController {
       })
 
       // Cập nhật lastMessage cho cuộc trò chuyện
-      conversation.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+      conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
       await conversation.save()
 
       // Thông báo cho tất cả thành viên về nhóm mới
@@ -1093,8 +1209,8 @@ class ConversationsController {
   async updateGroupMemberRole(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = req.context?.user?._id as Types.ObjectId | string
-      // Sửa lại tham số
-      const conversationId = req.params.conversationId
+      // Lấy conversationId từ params
+      const { conversationId } = req.params
       const { userId: targetUserId, role, permissions, customTitle } = req.body
 
       console.log('Update member role request:', {
@@ -1111,31 +1227,44 @@ class ConversationsController {
         throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
       }
 
-      // Kiểm tra xem người dùng hiện tại có trong danh sách participants không
-      const isParticipant = conversation.participants.some(
-        (participantId) => participantId.toString() === userId.toString()
+      // Kiểm tra xem người dùng hiện tại có phải là thành viên của nhóm không
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === userId.toString()
       )
 
-      if (!isParticipant) {
-        throw new AppError({
-          message: 'Bạn không phải thành viên của cuộc trò chuyện này',
-          status: 403
-        })
+      if (!currentMember) {
+        throw new AppError({ message: 'Bạn không phải là thành viên của nhóm này', status: 403 })
       }
 
-      // Chỉ chủ nhóm mới có thể thay đổi vai trò
-      const isOwner = conversation.userId.toString() === userId.toString()
+      // Kiểm tra quyền (chỉ OWNER hoặc ADMIN có quyền thay đổi vai trò)
+      const isAdmin =
+        currentMember.role === MEMBER_ROLE.OWNER || currentMember.role === MEMBER_ROLE.ADMIN
 
-      if (!isOwner) {
+      if (!isAdmin) {
         throw new AppError({
           message: 'Bạn không có quyền thay đổi vai trò thành viên',
           status: 403
         })
       }
 
-      // Không thể thay đổi vai trò của chủ nhóm
-      if (targetUserId === conversation.userId.toString()) {
-        throw new AppError({ message: 'Không thể thay đổi vai trò của chủ nhóm', status: 400 })
+      // Nếu không phải OWNER thì không thể thăng cấp người khác lên ADMIN
+      if (currentMember.role !== MEMBER_ROLE.OWNER && role === MEMBER_ROLE.ADMIN) {
+        throw new AppError({
+          message: 'Chỉ chủ nhóm mới có thể thăng cấp thành viên lên quản trị viên',
+          status: 403
+        })
+      }
+
+      // Không thể thay đổi vai trò của OWNER
+      const targetMember = conversation.members.find(
+        (member) => member.userId.toString() === targetUserId
+      )
+
+      if (targetMember && targetMember.role === MEMBER_ROLE.OWNER) {
+        throw new AppError({
+          message: 'Không thể thay đổi vai trò của chủ nhóm',
+          status: 403
+        })
       }
 
       // Cập nhật vai trò và quyền của thành viên
@@ -1146,7 +1275,7 @@ class ConversationsController {
       if (memberIndex === -1) {
         // Nếu thành viên chưa có trong danh sách members, thêm mới
         conversation.members.push({
-          userId: new mongoose.Schema.Types.ObjectId(targetUserId),
+          userId: new Schema.Types.ObjectId(targetUserId),
           role,
           permissions,
           customTitle,
@@ -1164,10 +1293,40 @@ class ConversationsController {
 
       await conversation.save()
 
+      // Tạo tin nhắn hệ thống thông báo thay đổi vai trò
+      const currentUser = await UserModel.findById(userId).select('name')
+      const targetUser = await UserModel.findById(targetUserId).select('name')
+
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: userId,
+        content: `${currentUser?.name || 'Người dùng'} đã thay đổi vai trò của ${targetUser?.name || 'thành viên'} thành ${role === MEMBER_ROLE.ADMIN ? 'Quản trị viên' : 'Thành viên'}`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      // Cập nhật lastMessage
+      conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên trong nhóm
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.MEMBER_ROLE_UPDATED, {
+        conversationId,
+        userId: targetUserId,
+        role,
+        permissions,
+        customTitle,
+        updatedBy: userId,
+        message: systemMessage
+      })
+
       res.json(
         new AppSuccess({
           message: 'Cập nhật vai trò thành công',
-          data: conversation
+          data: {
+            conversation,
+            message: systemMessage
+          }
         })
       )
     } catch (error) {
@@ -1234,6 +1393,7 @@ class ConversationsController {
       // Tìm nhóm bằng link mời
       const conversation = await ChatModel.findOne({ inviteLink })
         .populate('participants', '_id name avatar username')
+        .populate('members.userId', '_id name avatar username')
         .lean()
 
       if (!conversation) {
@@ -1244,6 +1404,24 @@ class ConversationsController {
       const isParticipant = conversation.participants.some(
         (p: any) => p._id.toString() === userId?.toString()
       )
+
+      // Kiểm tra xem người dùng đã từng là thành viên và đã rời nhóm chưa
+      const hasLeftGroup = conversation.formerMembers?.some(
+        (member: any) => member.userId.toString() === userId?.toString()
+      )
+
+      // Lọc ra danh sách admin và owner
+      const admins = conversation.members
+        .filter(
+          (member: any) => member.role === MEMBER_ROLE.OWNER || member.role === MEMBER_ROLE.ADMIN
+        )
+        .map((member: any) => ({
+          _id: member.userId._id,
+          name: member.userId.name,
+          avatar: member.userId.avatar,
+          username: member.userId.username,
+          role: member.role
+        }))
 
       // Trả về thông tin nhóm
       res.json(
@@ -1256,7 +1434,9 @@ class ConversationsController {
             memberCount: conversation.participants.length,
             requireApproval: conversation.requireApproval,
             participants: conversation.participants,
-            isParticipant
+            isParticipant,
+            hasLeftGroup,
+            admins // Thêm danh sách admin và owner
           }
         })
       )
@@ -1267,143 +1447,144 @@ class ConversationsController {
 
   async joinGroupByInviteLink(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = req.context?.user?._id as string
+      const userId = req.context?.user?._id as Types.ObjectId | string
       const { inviteLink } = req.params
 
-      console.log('Joining group with invite link:', inviteLink)
-      console.log('User ID:', userId)
-
-      // Tìm nhóm bằng link mời
+      // Tìm cuộc trò chuyện với link mời
       const conversation = await ChatModel.findOne({ inviteLink })
-
       if (!conversation) {
         throw new AppError({ message: 'Link mời không hợp lệ hoặc đã hết hạn', status: 404 })
       }
 
       // Kiểm tra xem người dùng đã là thành viên chưa
-      const isParticipant = conversation.participants.some(
-        (p) => p.toString() === userId.toString()
+      const isAlreadyMember = conversation.members.some(
+        (m) => m.userId.toString() === userId.toString()
       )
 
-      if (isParticipant) {
+      if (isAlreadyMember) {
         res.json(
           new AppSuccess({
-            message: 'Bạn đã là thành viên của nhóm này',
-            data: { conversationId: conversation._id }
+            data: { conversationId: conversation._id, alreadyMember: true },
+            message: 'Bạn đã là thành viên của nhóm này'
           })
         )
         return
       }
 
-      // Kiểm tra xem nhóm có yêu cầu phê duyệt không
-      if (conversation.requireApproval) {
-        console.log('Group requires approval')
+      // Kiểm tra loại nhóm và yêu cầu phê duyệt
+      const isPrivateGroup = conversation.groupType === GROUP_TYPE.PRIVATE
+      const requiresApproval = isPrivateGroup || conversation.requireApproval
+
+      if (requiresApproval) {
         // Kiểm tra xem đã có yêu cầu tham gia chưa
         const existingRequest = conversation.pendingRequests?.find(
           (req) => req.userId.toString() === userId.toString() && req.status === 'PENDING'
         )
 
         if (existingRequest) {
-          console.log('User already has a pending request')
           res.json(
             new AppSuccess({
-              message: 'Yêu cầu tham gia của bạn đang chờ phê duyệt',
-              data: { status: 'PENDING' }
+              data: { conversationId: conversation._id, pending: true },
+              message: 'Yêu cầu tham gia của bạn đang chờ phê duyệt'
             })
           )
           return
         }
 
-        // Thêm yêu cầu tham gia mới
+        // Thêm yêu cầu tham gia mới vào mảng pendingRequests
+        const newRequest = {
+          userId: new mongoose.Types.ObjectId(userId.toString()),
+          requestedAt: new Date(),
+          status: 'PENDING'
+        }
+
         if (!conversation.pendingRequests) {
           conversation.pendingRequests = []
         }
 
-        // Sử dụng findByIdAndUpdate để tránh lỗi với ObjectId
-        await ChatModel.findByIdAndUpdate(conversation._id, {
-          $push: {
-            pendingRequests: {
-              userId: userId,
-              requestedAt: new Date(),
-              status: 'PENDING'
-            }
-          }
-        })
-
-        console.log('Added join request')
+        conversation.pendingRequests.push(newRequest as any)
+        await conversation.save()
 
         // Thông báo cho admin và owner về yêu cầu tham gia mới
-        const admins = conversation.members.filter(
-          (m) => m.role === MEMBER_ROLE.OWNER || m.role === MEMBER_ROLE.ADMIN
+        const adminsAndOwners = conversation.members.filter(
+          (m) => m.role === MEMBER_ROLE.ADMIN || m.role === MEMBER_ROLE.OWNER
         )
 
-        admins.forEach((admin) => {
-          emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.JOIN_REQUEST, {
-            conversationId: conversation._id,
-            user: req.context?.user
+        // Tạo thông báo cho mỗi admin và owner
+        for (const admin of adminsAndOwners) {
+          await NotificationModel.create({
+            userId: admin.userId,
+            type: 'JOIN_REQUEST',
+            content: `Có yêu cầu tham gia mới vào nhóm ${conversation.name || 'của bạn'}`,
+            data: {
+              conversationId: conversation._id,
+              userId: userId
+            },
+            read: false
           })
-        })
+
+          // Gửi thông báo qua socket
+          emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.NEW_JOIN_REQUEST, {
+            conversationId: conversation._id,
+            userId: userId
+          })
+        }
 
         res.json(
           new AppSuccess({
-            message: 'Yêu cầu tham gia đã được gửi, vui lòng chờ phê duyệt',
-            data: { status: 'PENDING' }
+            data: { conversationId: conversation._id, pending: true },
+            message: 'Yêu cầu tham gia của bạn đã được gửi và đang chờ phê duyệt'
           })
         )
         return
       } else {
-        console.log('Group does not require approval, adding user directly')
-
-        // Sử dụng findByIdAndUpdate để tránh lỗi với ObjectId
-        await ChatModel.findByIdAndUpdate(conversation._id, {
-          $push: {
-            participants: userId,
-            members: {
-              userId: userId,
-              role: MEMBER_ROLE.MEMBER,
-              permissions: {
-                inviteUsers: true
-              },
-              joinedAt: new Date()
-            }
-          }
+        // Nhóm công khai không yêu cầu phê duyệt - thêm người dùng vào nhóm ngay lập tức
+        conversation.members.push({
+          userId: new Schema.Types.ObjectId(userId.toString()),
+          role: MEMBER_ROLE.MEMBER,
+          permissions: {
+            inviteUsers: true
+          },
+          joinedAt: new Date()
         })
 
-        console.log('Added user to group')
+        // Thêm người dùng vào danh sách participants
+        if (!conversation.participants.some((p) => p.toString() === userId.toString())) {
+          conversation.participants.push(new Schema.Types.ObjectId(userId.toString()))
+        }
 
-        // Tạo tin nhắn hệ thống
+        await conversation.save()
+
+        // Tạo tin nhắn hệ thống thông báo thành viên mới
+        const user = await UserModel.findById(userId).select('name')
         const systemMessage = await MessageModel.create({
           chatId: conversation._id,
           senderId: userId,
-          content: `${req.context?.user?.name} đã tham gia nhóm`,
+          content: `${user?.name || 'Người dùng'} đã tham gia nhóm`,
           type: MESSAGE_TYPE.SYSTEM,
           status: MESSAGE_STATUS.DELIVERED
         })
 
-        console.log('Created system message:', systemMessage._id)
-
         // Cập nhật lastMessage
-        await ChatModel.findByIdAndUpdate(conversation._id, { lastMessage: systemMessage._id })
+        conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
+        await conversation.save()
 
-        console.log('Updated lastMessage')
-
-        // Thông báo cho các thành viên
-        emitSocketEvent(String(conversation._id), SOCKET_EVENTS.NEW_MEMBER, {
-          conversation: conversation._id,
-          user: req.context?.user,
+        // Thông báo cho các thành viên khác
+        emitSocketEvent(String(conversation?._id), SOCKET_EVENTS.MEMBER_JOINED, {
+          conversationId: conversation._id,
+          userId,
           message: systemMessage
         })
 
         res.json(
           new AppSuccess({
-            message: 'Tham gia nhóm thành công',
-            data: { conversationId: conversation._id }
+            data: { conversationId: conversation._id, joined: true },
+            message: 'Bạn đã tham gia nhóm thành công'
           })
         )
         return
       }
     } catch (error) {
-      console.error('Error in joinGroupByInviteLink:', error)
       next(error)
     }
   }
@@ -1860,6 +2041,418 @@ class ConversationsController {
       )
     } catch (error) {
       console.error('Error adding members to group:', error)
+      next(error)
+    }
+  }
+
+  // Thêm phương thức rời khỏi nhóm
+  async leaveGroupConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id as Types.ObjectId | string
+      const { conversationId } = req.params
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+
+      // Kiểm tra xem người dùng có phải là thành viên của nhóm không
+      const isParticipant = conversation.participants.some(
+        (p) => p.toString() === userId.toString()
+      )
+
+      if (!isParticipant) {
+        throw new AppError({ message: 'Bạn không phải là thành viên của nhóm này', status: 403 })
+      }
+
+      // Kiểm tra xem người dùng có phải là chủ nhóm không
+      const isOwner = conversation.members.some(
+        (m) => m.userId.toString() === userId.toString() && m.role === MEMBER_ROLE.OWNER
+      )
+
+      if (isOwner) {
+        throw new AppError({
+          message:
+            'Chủ nhóm không thể rời nhóm. Vui lòng chuyển quyền chủ nhóm trước khi rời nhóm.',
+          status: 403
+        })
+      }
+
+      // Sử dụng findByIdAndUpdate để cập nhật conversation
+      await ChatModel.findByIdAndUpdate(conversationId, {
+        $pull: {
+          participants: userId,
+          members: { userId: userId }
+        },
+        $push: {
+          formerMembers: {
+            userId: userId,
+            leftAt: new Date()
+          }
+        }
+      })
+
+      // Tạo tin nhắn hệ thống
+      const user = await UserModel.findById(userId).select('name')
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: userId,
+        content: `${user?.name || 'Người dùng'} đã rời khỏi nhóm`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      // Cập nhật lastMessage
+      await ChatModel.findByIdAndUpdate(conversationId, { lastMessage: systemMessage._id })
+
+      // Thông báo cho tất cả thành viên trong nhóm
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.MEMBER_LEFT, {
+        conversationId,
+        userId,
+        message: systemMessage
+      })
+
+      res.json(
+        new AppSuccess({
+          message: 'Đã rời khỏi nhóm thành công',
+          data: { conversationId }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Thêm phương thức xóa nhóm (chỉ admin)
+  async deleteGroupConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id as Types.ObjectId | string
+      const { conversationId } = req.params
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+
+      // Kiểm tra xem người dùng có phải là chủ nhóm không
+      if (conversation.userId.toString() !== userId.toString()) {
+        throw new AppError({ message: 'Chỉ chủ nhóm mới có thể xóa nhóm', status: 403 })
+      }
+
+      // Xóa cuộc trò chuyện
+      await ChatModel.findByIdAndDelete(conversationId)
+
+      // Xóa tất cả tin nhắn trong cuộc trò chuyện
+      await MessageModel.deleteMany({ chatId: conversationId })
+
+      // Thông báo cho tất cả người dùng trong cuộc trò chuyện
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.CONVERSATION_DELETED, {
+        conversationId,
+        deletedBy: userId
+      })
+
+      res.json(
+        new AppSuccess({
+          data: { conversationId },
+          message: 'Nhóm đã được xóa thành công'
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Cập nhật controller để kiểm tra quyền truy cập vào chat
+  async checkChatAccess(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId } = req.params
+      const userId = req.context?.user?._id as string
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+
+      if (!conversation) {
+        throw new AppError({
+          status: status.NOT_FOUND,
+          message: 'Cuộc trò chuyện không tồn tại hoặc đã bị xóa'
+        })
+      }
+
+      // Kiểm tra xem người dùng có trong danh sách participants không
+      const isParticipant = conversation.participants.some(
+        (p) => p.toString() === userId.toString()
+      )
+
+      if (!isParticipant) {
+        throw new AppError({
+          status: status.FORBIDDEN,
+          message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
+        })
+      }
+
+      // Nếu mọi thứ OK, trả về thông tin cuộc trò chuyện cơ bản
+      res.json(
+        new AppSuccess({
+          message: 'Bạn có quyền truy cập vào cuộc trò chuyện này',
+          data: {
+            conversationId: conversation._id,
+            type: conversation.type,
+            name: conversation.name
+          }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Thêm phương thức chuyển quyền owner
+  async transferOwnership(req: Request, res: Response, next: NextFunction) {
+    try {
+      const currentUserId = req.context?.user?._id as Types.ObjectId | string
+      const { conversationId } = req.params
+      const { newOwnerId } = req.body
+
+      if (!newOwnerId) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Vui lòng chọn thành viên để chuyển quyền chủ nhóm'
+          })
+        )
+      }
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Không tìm thấy cuộc trò chuyện'
+          })
+        )
+      }
+
+      // Kiểm tra xem người dùng hiện tại có phải là owner không
+      const isOwner = conversation.members.some(
+        (m) => m.userId.toString() === currentUserId.toString() && m.role === MEMBER_ROLE.OWNER
+      )
+
+      if (!isOwner) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Chỉ chủ nhóm mới có thể chuyển quyền chủ nhóm'
+          })
+        )
+      }
+
+      // Kiểm tra xem người được chuyển quyền có phải là thành viên của nhóm không
+      const isNewOwnerMember = conversation.members.some(
+        (m) => m.userId.toString() === newOwnerId.toString()
+      )
+
+      if (!isNewOwnerMember) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Người được chọn không phải là thành viên của nhóm'
+          })
+        )
+      }
+
+      // Cập nhật quyền cho owner mới
+      await ChatModel.updateOne(
+        { _id: conversationId, 'members.userId': newOwnerId },
+        {
+          $set: {
+            'members.$.role': MEMBER_ROLE.OWNER,
+            'members.$.permissions': {
+              changeGroupInfo: true,
+              deleteMessages: true,
+              banUsers: true,
+              inviteUsers: true,
+              pinMessages: true,
+              addNewAdmins: true,
+              approveJoinRequests: true
+            }
+          }
+        }
+      )
+
+      // Cập nhật quyền cho owner cũ thành ADMIN
+      await ChatModel.updateOne(
+        { _id: conversationId, 'members.userId': currentUserId },
+        {
+          $set: {
+            'members.$.role': MEMBER_ROLE.ADMIN,
+            'members.$.permissions': {
+              changeGroupInfo: true,
+              deleteMessages: true,
+              banUsers: true,
+              inviteUsers: true,
+              pinMessages: true,
+              addNewAdmins: false,
+              approveJoinRequests: true
+            }
+          }
+        }
+      )
+
+      // Cập nhật userId của nhóm
+      await ChatModel.findByIdAndUpdate(conversationId, { userId: newOwnerId })
+
+      // Lấy thông tin người dùng
+      const currentUser = await UserModel.findById(currentUserId).select('name')
+      const newOwner = await UserModel.findById(newOwnerId).select('name')
+
+      // Tạo tin nhắn hệ thống
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: currentUserId,
+        content: `${currentUser?.name || 'Chủ nhóm'} đã chuyển quyền chủ nhóm cho ${newOwner?.name || 'thành viên mới'}`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      // Cập nhật lastMessage
+      await ChatModel.findByIdAndUpdate(conversationId, { lastMessage: systemMessage._id })
+
+      // Thông báo cho tất cả thành viên trong nhóm
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.OWNERSHIP_TRANSFERRED, {
+        conversationId,
+        previousOwnerId: currentUserId,
+        newOwnerId,
+        message: systemMessage
+      })
+
+      res.json(
+        new AppSuccess({
+          message: 'Đã chuyển quyền chủ nhóm thành công',
+          data: {
+            conversationId,
+            newOwnerId,
+            message: systemMessage
+          }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Thêm phương thức giải tán nhóm (chỉ owner)
+  async disbandGroup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id as Types.ObjectId | string
+      const { conversationId } = req.params
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+
+      // Kiểm tra xem người dùng có phải là chủ nhóm không
+      if (conversation.userId.toString() !== userId.toString()) {
+        throw new AppError({ message: 'Chỉ chủ nhóm mới có thể giải tán nhóm', status: 403 })
+      }
+
+      // Xóa cuộc trò chuyện
+      await ChatModel.findByIdAndDelete(conversationId)
+
+      // Xóa tất cả tin nhắn trong cuộc trò chuyện
+      await MessageModel.deleteMany({ chatId: conversationId })
+
+      // Thông báo cho tất cả người dùng trong cuộc trò chuyện
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.GROUP_DISBANDED, {
+        conversationId,
+        conversationName: conversation.name,
+        disbandedBy: userId
+      })
+
+      res.json(
+        new AppSuccess({
+          data: { conversationId },
+          message: 'Nhóm đã được giải tán thành công'
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Cập nhật thông tin nhóm
+  async updateGroupConversation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+      const { conversationId } = req.params
+      const { name, avatar, groupType, requireApproval } = req.body
+
+      console.log('Updating group conversation:', {
+        userId,
+        conversationId,
+        updates: { name, avatar, groupType, requireApproval }
+      })
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+
+      // Kiểm tra quyền
+      const member = conversation.members.find((m) => m.userId.toString() === String(userId))
+      const canChangeInfo =
+        member?.role === MEMBER_ROLE.OWNER ||
+        member?.role === MEMBER_ROLE.ADMIN ||
+        member?.permissions?.changeGroupInfo
+
+      if (!canChangeInfo) {
+        throw new AppError({
+          message: 'Bạn không có quyền thay đổi thông tin nhóm',
+          status: 403
+        })
+      }
+
+      // Cập nhật thông tin
+      if (name) conversation.name = name
+      if (avatar) conversation.avatar = avatar
+
+      // Cập nhật loại nhóm nếu có
+      if (groupType) conversation.groupType = groupType
+
+      // Đảm bảo nhóm riêng tư luôn yêu cầu phê duyệt
+      if (groupType === GROUP_TYPE.PRIVATE) {
+        conversation.requireApproval = true
+      } else if (requireApproval !== undefined) {
+        conversation.requireApproval = requireApproval
+      }
+
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên về thay đổi
+      emitSocketEvent(String(conversation._id), SOCKET_EVENTS.GROUP_UPDATED, {
+        conversationId: conversation._id,
+        updatedBy: userId,
+        updates: {
+          name: name || undefined,
+          avatar: avatar || undefined,
+          groupType: groupType || undefined,
+          requireApproval: conversation.requireApproval
+        }
+      })
+
+      res.json(
+        new AppSuccess({
+          data: conversation,
+          message: 'Cập nhật thông tin nhóm thành công'
+        })
+      )
+    } catch (error) {
+      console.error('Error in updateGroupConversation:', error)
       next(error)
     }
   }

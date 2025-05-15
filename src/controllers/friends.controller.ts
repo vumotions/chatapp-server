@@ -665,14 +665,16 @@ class FriendsController {
         }
         
         // Nếu cùng role, sắp xếp theo tên
-        return a.name.localeCompare(b.name);
+        return (a?.name || '').localeCompare(b?.name || '');
       });
       
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách thành viên với vai trò thành công',
-          data: sortedMembers,
-          isAdmin // Thêm trường isAdmin để client biết người dùng có quyền admin không
+          data: {
+            members: sortedMembers,
+            isAdmin // Thêm trường isAdmin để client biết người dùng có quyền admin không
+          }
         })
       )
     } catch (error) {

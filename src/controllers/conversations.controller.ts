@@ -1436,7 +1436,8 @@ class ConversationsController {
             participants: conversation.participants,
             isParticipant,
             hasLeftGroup,
-            admins // Thêm danh sách admin và owner
+            admins, // Thêm danh sách admin và owner
+            isPrivate: conversation.groupType === GROUP_TYPE.PRIVATE
           }
         })
       )
@@ -1975,6 +1976,70 @@ class ConversationsController {
         return
       }
 
+      // Kiểm tra loại nhóm và yêu cầu phê duyệt
+      const isPrivateGroup = conversation.groupType === GROUP_TYPE.PRIVATE
+      const requiresApproval = isPrivateGroup || conversation.requireApproval
+
+      // Nếu là nhóm private hoặc yêu cầu phê duyệt, thêm vào danh sách chờ
+      if (requiresApproval && !isAdmin) {
+        // Chỉ admin và owner có thể thêm thành viên trực tiếp vào nhóm private
+        // Người dùng thường chỉ có thể gửi lời mời, cần được phê duyệt
+        
+        // Chuẩn bị các yêu cầu tham gia mới
+        const pendingRequests = newUserIds.map(id => ({
+          userId: new mongoose.Types.ObjectId(id),
+          requestedAt: new Date(),
+          status: 'PENDING',
+          invitedBy: userId // Thêm thông tin người mời
+        }));
+        
+        // Thêm vào danh sách chờ
+        await ChatModel.findByIdAndUpdate(conversationId, {
+          $push: {
+            pendingRequests: { $each: pendingRequests }
+          }
+        });
+        
+        // Thông báo cho admin và owner về yêu cầu tham gia mới
+        const adminsAndOwners = conversation.members.filter(
+          (m) => m.role === MEMBER_ROLE.ADMIN || m.role === MEMBER_ROLE.OWNER
+        );
+        
+        // Lấy thông tin người mời
+        const inviter = await UserModel.findById(userId).select('name');
+        
+        // Tạo thông báo cho mỗi admin và owner
+        for (const admin of adminsAndOwners) {
+          await NotificationModel.create({
+            userId: admin.userId,
+            type: 'JOIN_REQUEST',
+            content: `${inviter?.name || 'Một thành viên'} đã mời ${newUserIds.length} người vào nhóm ${conversation.name || 'của bạn'}`,
+            data: {
+              conversationId: conversation._id,
+              invitedBy: userId,
+              userIds: newUserIds
+            },
+            read: false
+          });
+          
+          // Gửi thông báo qua socket
+          emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.NEW_JOIN_REQUEST, {
+            conversationId: conversation._id,
+            invitedBy: userId,
+            userIds: newUserIds
+          });
+        }
+        
+        res.json(
+          new AppSuccess({
+            message: 'Lời mời đã được gửi và đang chờ phê duyệt',
+            data: { conversationId, pendingApproval: true }
+          })
+        );
+        return;
+      }
+      
+      // Nếu là nhóm public hoặc người dùng là admin/owner, thêm thành viên trực tiếp
       // Chuẩn bị các thành viên mới để thêm vào
       const newParticipants = newUserIds.map((id) => new mongoose.Types.ObjectId(id))
       const newMembers = newUserIds.map((id) => ({
@@ -1994,53 +2059,41 @@ class ConversationsController {
         }
       })
 
-      // Lấy thông tin người dùng đã thêm
-      const addedUsers = await UserModel.find({ _id: { $in: newUserIds } }).select('name avatar')
+      // Lấy thông tin người dùng hiện tại
+      const currentUser = await UserModel.findById(userId).select('name')
 
       // Tạo tin nhắn hệ thống
       const systemMessage = await MessageModel.create({
         chatId: conversation._id,
         senderId: userId,
-        content: `${req.context?.user?.name} đã thêm ${addedUsers.length} thành viên mới vào nhóm`,
+        content: `${currentUser?.name || 'Một thành viên'} đã thêm ${newUserIds.length} thành viên mới vào nhóm`,
         type: MESSAGE_TYPE.SYSTEM,
         status: MESSAGE_STATUS.DELIVERED
       })
 
-      // Cập nhật lastMessage
-      await ChatModel.findByIdAndUpdate(conversationId, { lastMessage: systemMessage._id })
-
-      // Lấy conversation đã cập nhật
-      const updatedConversation = await ChatModel.findById(conversationId)
+      // Cập nhật lastMessage cho cuộc trò chuyện
+      await ChatModel.findByIdAndUpdate(conversationId, {
+        lastMessage: systemMessage._id
+      })
 
       // Thông báo cho tất cả thành viên trong nhóm
-      emitSocketEvent(String(conversation._id), SOCKET_EVENTS.NEW_MEMBER, {
-        conversation: conversation._id,
-        addedUsers: addedUsers,
-        addedBy: req.context?.user,
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.MEMBERS_ADDED, {
+        conversationId,
+        addedBy: userId,
+        newMembers: newUserIds,
         message: systemMessage
       })
 
-      // Thông báo cho từng người dùng mới được thêm vào
-      for (const newUserId of newUserIds) {
-        emitSocketEvent(newUserId.toString(), SOCKET_EVENTS.NEW_CONVERSATION, {
-          conversation: {
-            ...updatedConversation?.toObject(),
-            lastMessage: systemMessage
-          }
-        })
-      }
-
       res.json(
         new AppSuccess({
-          message: 'Members added to group successfully',
+          message: 'Thêm thành viên thành công',
           data: {
             conversationId,
-            addedUsers: addedUsers
+            addedMembers: newUserIds
           }
         })
       )
     } catch (error) {
-      console.error('Error adding members to group:', error)
       next(error)
     }
   }
@@ -2453,6 +2506,36 @@ class ConversationsController {
       )
     } catch (error) {
       console.error('Error in updateGroupConversation:', error)
+      next(error)
+    }
+  }
+
+  // Thêm phương thức để kiểm tra trạng thái yêu cầu tham gia
+  async checkJoinRequestStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+      const { conversationId } = req.params
+
+      console.log('Checking join request status for:', { userId, conversationId })
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      }
+
+      // Kiểm tra xem người dùng có trong danh sách pendingRequests không
+      const pendingRequest = conversation.pendingRequests?.find(
+        (req) => req.userId.toString() === userId?.toString() && req.status === 'PENDING'
+      )
+
+      res.json(
+        new AppSuccess({
+          message: 'Lấy trạng thái yêu cầu tham gia thành công',
+          data: { status: pendingRequest ? pendingRequest.status : null }
+        })
+      )
+    } catch (error) {
       next(error)
     }
   }

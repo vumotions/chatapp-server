@@ -239,4 +239,12 @@ conversationsRoutes.put(
   wrapRequestHandler(conversationsController.updateGroupConversation)
 )
 
+// Thêm route để kiểm tra trạng thái yêu cầu tham gia
+conversationsRoutes.get(
+  '/group/:conversationId/join-request-status',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.checkJoinRequestStatus)
+)
+
 export default conversationsRoutes

@@ -91,6 +91,10 @@ const joinRequestSchema = new Schema(
       type: String,
       enum: ['PENDING', 'APPROVED', 'REJECTED'],
       default: 'PENDING'
+    },
+    invitedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
   { _id: false }

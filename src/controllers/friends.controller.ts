@@ -109,7 +109,8 @@ class FriendsController {
             _id: sender._id,
             name: sender.name,
             avatar: sender.avatar
-          }
+          },
+          content: `${sender.name} đã gửi cho bạn lời mời kết bạn` // Thêm nội dung rõ ràng
         }
 
         console.log(

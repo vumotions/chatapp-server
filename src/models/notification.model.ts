@@ -47,6 +47,10 @@ const notificationSchema = new Schema<INotification>(
     metadata: {
       type: Schema.Types.Mixed,
       default: {}
+    },
+    deleted: {
+      type: Boolean,
+      default: false
     }
   },
   { timestamps: true }

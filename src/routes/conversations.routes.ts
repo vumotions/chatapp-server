@@ -247,4 +247,28 @@ conversationsRoutes.get(
   wrapRequestHandler(conversationsController.checkJoinRequestStatus)
 )
 
+// Cấm chat thành viên trong nhóm
+conversationsRoutes.post(
+  '/group/:conversationId/members/:userId/mute',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.muteGroupMember)
+)
+
+// Bỏ cấm chat thành viên trong nhóm
+conversationsRoutes.post(
+  '/group/:conversationId/members/:userId/unmute',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.unmuteGroupMember)
+)
+
+// Kiểm tra trạng thái cấm chat của người dùng
+conversationsRoutes.get(
+  '/chat/:chatId/mute-status',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.checkUserMuteStatus)
+)
+
 export default conversationsRoutes

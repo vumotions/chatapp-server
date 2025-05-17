@@ -8,6 +8,8 @@ export interface IChatMember {
   permissions: Record<string, boolean>
   customTitle?: string
   joinedAt: Date
+  isMuted: boolean
+  mutedUntil: Date | null
 }
 
 export interface IFormerMember {
@@ -71,6 +73,14 @@ const chatMemberSchema = new Schema(
     joinedAt: {
       type: Date,
       default: Date.now
+    },
+    isMuted: {
+      type: Boolean,
+      default: false
+    },
+    mutedUntil: {
+      type: Date,
+      default: null
     }
   },
   { _id: false }

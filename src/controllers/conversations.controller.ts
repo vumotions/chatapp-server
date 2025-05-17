@@ -258,13 +258,17 @@ class ConversationsController {
               userId,
               role: MEMBER_ROLE.MEMBER,
               permissions: {},
-              joinedAt: new Date()
+              joinedAt: new Date(),
+              isMuted: false,
+              mutedUntil: null
             },
             ...participants.map((participantId) => ({
               userId: participantId,
               role: MEMBER_ROLE.MEMBER,
               permissions: {},
-              joinedAt: new Date()
+              joinedAt: new Date(),
+              isMuted: false,
+              mutedUntil: null
             }))
           ]
         })
@@ -1159,7 +1163,9 @@ class ConversationsController {
               addNewAdmins: true,
               approveJoinRequests: true
             },
-            joinedAt: new Date()
+            joinedAt: new Date(),
+            isMuted: false,
+            mutedUntil: null
           },
           ...participants.map((participantId) => ({
             userId: participantId,
@@ -1167,7 +1173,9 @@ class ConversationsController {
             permissions: {
               inviteUsers: true
             },
-            joinedAt: new Date()
+            joinedAt: new Date(),
+            isMuted: false,
+            mutedUntil: null
           }))
         ]
       })
@@ -1274,19 +1282,40 @@ class ConversationsController {
         (member) => member.userId.toString() === targetUserId
       )
 
+      // Xác định quyền dựa trên vai trò mới
+      let updatedPermissions = permissions // Mặc định sử dụng quyền từ request
+
+      // Nếu chuyển từ ADMIN xuống MEMBER, reset quyền về mặc định của MEMBER
+      if (role === MEMBER_ROLE.MEMBER && targetMember?.role === MEMBER_ROLE.ADMIN) {
+        updatedPermissions = {
+          changeGroupInfo: false,
+          deleteMessages: false,
+          banUsers: false,
+          inviteUsers: true,
+          pinMessages: false,
+          addNewAdmins: false,
+          approveJoinRequests: false
+        }
+      }
+
       if (memberIndex === -1) {
         // Nếu thành viên chưa có trong danh sách members, thêm mới
         conversation.members.push({
           userId: new Schema.Types.ObjectId(targetUserId),
           role,
-          permissions,
+          permissions: updatedPermissions || {}, // Đảm bảo không bị null/undefined
           customTitle,
-          joinedAt: new Date()
+          joinedAt: new Date(),
+          isMuted: false,
+          mutedUntil: null
         })
       } else {
         // Cập nhật thông tin thành viên
         conversation.members[memberIndex].role = role
-        conversation.members[memberIndex].permissions = permissions
+
+        if (updatedPermissions) {
+          conversation.members[memberIndex].permissions = updatedPermissions
+        }
 
         if (customTitle !== undefined) {
           conversation.members[memberIndex].customTitle = customTitle
@@ -1316,7 +1345,7 @@ class ConversationsController {
         conversationId,
         userId: targetUserId,
         role,
-        permissions,
+        permissions: updatedPermissions,
         customTitle,
         updatedBy: userId,
         message: systemMessage
@@ -1618,7 +1647,9 @@ class ConversationsController {
           permissions: {
             inviteUsers: true
           },
-          joinedAt: new Date()
+          joinedAt: new Date(),
+          isMuted: false,
+          mutedUntil: null
         })
 
         // Thêm người dùng vào danh sách participants
@@ -1759,7 +1790,9 @@ class ConversationsController {
           permissions: {
             inviteUsers: true
           },
-          joinedAt: new Date()
+          joinedAt: new Date(),
+          isMuted: false,
+          mutedUntil: null
         })
 
         // Lưu các thay đổi
@@ -1898,12 +1931,63 @@ class ConversationsController {
         )
       }
 
-      // Kiểm tra người dùng hiện tại có quyền xóa thành viên không (phải là admin)
-      if (conversation.userId.toString() !== currentUserId?.toString()) {
+      // Kiểm tra người dùng hiện tại có quyền xóa thành viên không
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === currentUserId?.toString()
+      )
+
+      if (!currentMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this group'
+          })
+        )
+      }
+
+      const isOwner = currentMember.role === MEMBER_ROLE.OWNER
+      const isAdmin = currentMember.role === MEMBER_ROLE.ADMIN
+      const canRemoveMembers = isOwner || (isAdmin && currentMember.permissions?.banUsers)
+
+      if (!canRemoveMembers) {
         return next(
           new AppError({
             status: status.FORBIDDEN,
             message: 'You do not have permission to remove members from this group'
+          })
+        )
+      }
+
+      // Không cho phép xóa chính mình
+      if (memberIdToRemove === currentUserId?.toString()) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Cannot remove yourself from the group. Use the leave group function instead.'
+          })
+        )
+      }
+
+      // Không cho phép admin xóa owner
+      const memberToRemove = conversation.members.find(
+        (member) => member.userId.toString() === memberIdToRemove
+      )
+
+      if (memberToRemove?.role === MEMBER_ROLE.OWNER && !isOwner) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Admins cannot remove the group owner'
+          })
+        )
+      }
+
+      // Không cho phép admin xóa admin khác (chỉ owner có thể xóa admin)
+      if (memberToRemove?.role === MEMBER_ROLE.ADMIN && !isOwner) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Admins cannot remove other admins'
           })
         )
       }
@@ -1918,16 +2002,6 @@ class ConversationsController {
           new AppError({
             status: status.BAD_REQUEST,
             message: 'User is not a member of this group'
-          })
-        )
-      }
-
-      // Không cho phép xóa admin (người tạo nhóm)
-      if (memberIdToRemove === conversation.userId.toString()) {
-        return next(
-          new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Cannot remove the group admin'
           })
         )
       }
@@ -2216,7 +2290,9 @@ class ConversationsController {
         permissions: {
           inviteUsers: true
         },
-        joinedAt: new Date()
+        joinedAt: new Date(),
+        isMuted: false,
+        mutedUntil: null
       }))
 
       // Sử dụng findByIdAndUpdate để cập nhật conversation
@@ -2643,6 +2719,12 @@ class ConversationsController {
         })
       }
 
+      // Lưu thông tin cũ để so sánh
+      const oldName = conversation.name
+      const oldAvatar = conversation.avatar
+      const oldGroupType = conversation.groupType
+      const oldRequireApproval = conversation.requireApproval
+
       // Cập nhật thông tin
       if (name) conversation.name = name
       if (avatar) conversation.avatar = avatar
@@ -2659,26 +2741,61 @@ class ConversationsController {
 
       await conversation.save()
 
+      // Tạo tin nhắn hệ thống thông báo thay đổi
+      const user = await UserModel.findById(userId).select('name')
+      let systemMessageContent = `${user?.name || 'Người dùng'} đã cập nhật thông tin nhóm`
+      
+      // Thêm chi tiết về những thay đổi cụ thể
+      const changes = []
+      if (name && name !== oldName) {
+        changes.push(`tên nhóm thành "${name}"`)
+      }
+      if (avatar && avatar !== oldAvatar) {
+        changes.push('ảnh đại diện nhóm')
+      }
+      if (groupType && groupType !== oldGroupType) {
+        changes.push(`loại nhóm thành ${groupType === GROUP_TYPE.PRIVATE ? 'riêng tư' : 'công khai'}`)
+      }
+      if (requireApproval !== undefined && requireApproval !== oldRequireApproval && groupType !== GROUP_TYPE.PRIVATE) {
+        changes.push(`${requireApproval ? 'bật' : 'tắt'} yêu cầu phê duyệt khi tham gia`)
+      }
+      
+      // Nếu có thay đổi cụ thể, thêm vào nội dung tin nhắn
+      if (changes.length > 0) {
+        systemMessageContent = `${user?.name || 'Người dùng'} đã thay đổi ${changes.join(', ')}`
+      }
+      
+      // Tạo tin nhắn hệ thống
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: userId,
+        content: systemMessageContent,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+      
+      // Cập nhật lastMessage cho cuộc trò chuyện
+      conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
+      await conversation.save()
+
       // Thông báo cho tất cả thành viên về thay đổi
       emitSocketEvent(String(conversation._id), SOCKET_EVENTS.GROUP_UPDATED, {
         conversationId: conversation._id,
+        type: 'GROUP_UPDATED',
         updatedBy: userId,
-        updates: {
-          name: name || undefined,
-          avatar: avatar || undefined,
-          groupType: groupType || undefined,
-          requireApproval: conversation.requireApproval
-        }
+        message: systemMessage
       })
 
       res.json(
         new AppSuccess({
-          data: conversation,
+          data: {
+            ...conversation.toObject(),
+            lastMessage: systemMessage
+          },
           message: 'Cập nhật thông tin nhóm thành công'
         })
       )
     } catch (error) {
-      console.error('Error in updateGroupConversation:', error)
       next(error)
     }
   }
@@ -2709,6 +2826,360 @@ class ConversationsController {
         })
       )
     } catch (error) {
+      next(error)
+    }
+  }
+
+  // Cấm/cho phép thành viên chat trong nhóm
+  async muteGroupMember(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId, userId: memberIdToMute } = req.params
+      const { duration } = req.body // Thời gian cấm chat tính bằng phút, 0 = vô thời hạn
+      const currentUserId = req.context?.user?._id
+
+      // Kiểm tra conversationId
+      if (!conversationId || !memberIdToMute) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Conversation ID and Member ID are required'
+          })
+        )
+      }
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+
+      // Kiểm tra cuộc trò chuyện tồn tại
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
+      }
+
+      // Kiểm tra người dùng hiện tại có quyền cấm chat không
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === currentUserId?.toString()
+      )
+
+      if (!currentMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this group'
+          })
+        )
+      }
+
+      const isOwner = currentMember.role === MEMBER_ROLE.OWNER
+      const isAdmin = currentMember.role === MEMBER_ROLE.ADMIN
+      const canBanUsers = isOwner || (isAdmin && currentMember.permissions?.banUsers)
+
+      if (!canBanUsers) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You do not have permission to mute members in this group'
+          })
+        )
+      }
+
+      // Không cho phép cấm chat chính mình
+      if (memberIdToMute === currentUserId?.toString()) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Cannot mute yourself'
+          })
+        )
+      }
+
+      // Không cho phép admin cấm chat owner
+      const memberToMute = conversation.members.find(
+        (member) => member.userId.toString() === memberIdToMute
+      )
+
+      if (!memberToMute) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'User is not a member of this group'
+          })
+        )
+      }
+
+      if (memberToMute.role === MEMBER_ROLE.OWNER) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Cannot mute the group owner'
+          })
+        )
+      }
+
+      // Không cho phép admin cấm chat admin khác (chỉ owner có thể cấm chat admin)
+      if (memberToMute.role === MEMBER_ROLE.ADMIN && !isOwner) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Admins cannot mute other admins'
+          })
+        )
+      }
+
+      // Tính thời gian hết hạn cấm chat
+      let mutedUntil = null
+      if (duration && duration > 0) {
+        mutedUntil = new Date()
+        mutedUntil.setMinutes(mutedUntil.getMinutes() + duration)
+      }
+
+      // Cập nhật trạng thái cấm chat
+      await ChatModel.updateOne(
+        {
+          _id: conversationId,
+          'members.userId': memberIdToMute
+        },
+        {
+          $set: {
+            'members.$.isMuted': true,
+            'members.$.mutedUntil': mutedUntil
+          }
+        }
+      )
+
+      // Lấy thông tin người dùng bị cấm chat
+      const mutedUser = await UserModel.findById(memberIdToMute).select('name')
+
+      // Tạo tin nhắn hệ thống thông báo
+      const muteMessage =
+        duration && duration > 0
+          ? `${mutedUser?.name || 'Thành viên'} đã bị cấm chat trong ${duration} phút`
+          : `${mutedUser?.name || 'Thành viên'} đã bị cấm chat vô thời hạn`
+
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: currentUserId,
+        content: muteMessage,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      // Cập nhật lastMessage
+      conversation.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên trong nhóm
+      emitSocketEvent(conversationId, SOCKET_EVENTS.MEMBER_MUTED, {
+        conversationId,
+        mutedUserId: memberIdToMute,
+        mutedBy: currentUserId,
+        mutedUntil: mutedUntil,
+        message: systemMessage.toObject()
+      })
+
+      res.json(
+        new AppSuccess({
+          data: {
+            conversationId,
+            mutedUserId: memberIdToMute,
+            mutedUntil: mutedUntil
+          },
+          message: 'Member muted successfully'
+        })
+      )
+    } catch (error) {
+      console.error('Error muting group member:', error)
+      next(error)
+    }
+  }
+
+  // Bỏ cấm chat thành viên
+  async unmuteGroupMember(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId, userId: memberIdToUnmute } = req.params
+      const currentUserId = req.context?.user?._id
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
+      }
+
+      // Kiểm tra quyền
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === currentUserId?.toString()
+      )
+
+      if (!currentMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this group'
+          })
+        )
+      }
+
+      const isOwner = currentMember.role === MEMBER_ROLE.OWNER
+      const isAdmin = currentMember.role === MEMBER_ROLE.ADMIN
+      const canBanUsers = isOwner || (isAdmin && currentMember.permissions?.banUsers)
+
+      if (!canBanUsers) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You do not have permission to unmute members in this group'
+          })
+        )
+      }
+
+      // Cập nhật trạng thái cấm chat
+      await ChatModel.updateOne(
+        {
+          _id: conversationId,
+          'members.userId': memberIdToUnmute
+        },
+        {
+          $set: {
+            'members.$.isMuted': false,
+            'members.$.mutedUntil': null
+          }
+        }
+      )
+
+      // Lấy thông tin người dùng
+      const unmutedUser = await UserModel.findById(memberIdToUnmute).select('name')
+
+      // Tạo tin nhắn hệ thống
+      const systemMessage = await MessageModel.create({
+        chatId: conversation._id,
+        senderId: currentUserId,
+        content: `${unmutedUser?.name || 'Thành viên'} đã được bỏ cấm chat`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
+
+      // Cập nhật lastMessage
+      conversation.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên
+      emitSocketEvent(conversationId, SOCKET_EVENTS.MEMBER_UNMUTED, {
+        conversationId,
+        unmutedUserId: memberIdToUnmute,
+        unmutedBy: currentUserId,
+        message: systemMessage.toObject()
+      })
+
+      res.json(
+        new AppSuccess({
+          data: { conversationId, unmutedUserId: memberIdToUnmute },
+          message: 'Member unmuted successfully'
+        })
+      )
+    } catch (error) {
+      console.error('Error unmuting group member:', error)
+      next(error)
+    }
+  }
+
+  // Thêm phương thức để kiểm tra trạng thái cấm chat của người dùng
+  async checkUserMuteStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+      const { chatId } = req.params
+
+      // Kiểm tra chatId
+      if (!chatId) {
+        next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Chat ID is required'
+          })
+        )
+        return
+      }
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(chatId)
+      if (!conversation) {
+        next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
+        return
+      }
+
+      // Kiểm tra xem người dùng có trong cuộc trò chuyện không
+      const isMember = conversation.participants.some(
+        (participant) => participant.toString() === userId?.toString()
+      )
+
+      if (!isMember) {
+        next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this conversation'
+          })
+        )
+        return
+      }
+
+      // Kiểm tra xem người dùng có bị cấm chat không
+      const member = conversation.members.find(
+        (member) => member.userId.toString() === userId?.toString()
+      )
+
+      // Nếu người dùng bị cấm chat
+      if (member?.isMuted) {
+        // Kiểm tra thời hạn cấm chat
+        if (!member.mutedUntil || new Date() < new Date(member.mutedUntil)) {
+          // Vẫn trong thời gian bị cấm
+          res.json(
+            new AppSuccess({
+              message: 'User is muted in this conversation',
+              data: {
+                isMuted: true,
+                mutedUntil: member.mutedUntil,
+                canSendMessages: false,
+                conversationId: chatId
+              }
+            })
+          )
+          return
+        } else {
+          // Đã hết thời hạn cấm chat, tự động bỏ cấm
+          await ChatModel.updateOne(
+            { _id: chatId, 'members.userId': userId },
+            { $set: { 'members.$.isMuted': false, 'members.$.mutedUntil': null } }
+          )
+        }
+      }
+
+      // Nếu không bị cấm chat hoặc đã hết thời hạn
+      res.json(
+        new AppSuccess({
+          message: 'User can send messages in this conversation',
+          data: {
+            isMuted: false,
+            mutedUntil: null,
+            canSendMessages: true,
+            conversationId: chatId
+          }
+        })
+      )
+    } catch (error) {
+      console.error('Error checking mute status:', error)
       next(error)
     }
   }

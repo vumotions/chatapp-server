@@ -89,17 +89,13 @@ const initSocket = async (server: HttpServer) => {
   })
 
   io.on('connection', (socket) => {
-    console.log(`User ${socket.id} connected`)
     const { userId } = socket.handshake.auth.decodedAccessToken as TokenPayload
 
     // Lưu mapping userId -> socketId
     users.set(userId, socket.id)
-    console.log(`User ${userId} mapped to socket ${socket.id}`)
     console.log('Current users:', Array.from(users.entries()))
-
     // Tham gia vào room cá nhân để nhận thông báo
     socket.join(userId)
-    console.log(`User ${userId} joined personal room ${userId}`)
 
     // Thêm log để kiểm tra các room
     console.log(`Socket ${socket.id} rooms:`, Array.from(socket.rooms))
@@ -183,6 +179,28 @@ const initSocket = async (server: HttpServer) => {
           chat = await ChatModel.findById(chatId)
           if (!chat) {
             return socket.emit(SOCKET_EVENTS.ERROR, { message: 'Chat not found' })
+          }
+
+          // Kiểm tra xem người dùng có bị cấm chat không
+          const sender = chat.members.find(
+            (member) => member.userId.toString() === userId.toString()
+          )
+
+          if (sender?.isMuted) {
+            // Kiểm tra thời hạn cấm chat
+            if (!sender.mutedUntil || new Date() < new Date(sender.mutedUntil)) {
+              return socket.emit(SOCKET_EVENTS.ERROR, {
+                message: sender.mutedUntil
+                  ? `Bạn đã bị cấm chat đến ${new Date(sender.mutedUntil).toLocaleString()}`
+                  : 'Bạn đã bị cấm chat trong nhóm này'
+              })
+            } else {
+              // Nếu đã hết thời hạn cấm chat, tự động bỏ cấm
+              await ChatModel.updateOne(
+                { _id: chatId, 'members.userId': userId },
+                { $set: { 'members.$.isMuted': false, 'members.$.mutedUntil': null } }
+              )
+            }
           }
         }
 
@@ -319,29 +337,29 @@ const initSocket = async (server: HttpServer) => {
         }
 
         // Lấy danh sách người tham gia
-        const participants = chat.participants.map(p => p.toString())
-        
+        const participants = chat.participants.map((p) => p.toString())
+
         // Cập nhật readBy cho các tin nhắn
         const messages = await MessageModel.find({ _id: { $in: messageIds } })
         const updatedMessages = []
-        
+
         for (const message of messages) {
           // Chỉ cập nhật nếu người dùng chưa đọc tin nhắn
           if (!message.readBy.includes(userId)) {
             message.readBy.push(userId)
-            
+
             // Đếm số người đã đọc tin nhắn (không tính người gửi)
             const readersCount = message.readBy.filter(
-              reader => reader.toString() !== message.senderId.toString()
+              (reader) => reader.toString() !== message.senderId.toString()
             ).length
-            
+
             // Đếm số người nhận tin nhắn (không tính người gửi)
             const receiversCount = participants.filter(
-              p => p !== message.senderId.toString()
+              (p) => p !== message.senderId.toString()
             ).length
-            
+
             console.log(`Message ${message._id}: ${readersCount}/${receiversCount} readers`)
-            
+
             // Nếu tất cả người nhận đã đọc tin nhắn, đánh dấu là SEEN
             if (readersCount >= receiversCount) {
               message.status = MESSAGE_STATUS.SEEN
@@ -349,15 +367,15 @@ const initSocket = async (server: HttpServer) => {
               // Nếu chưa tất cả đã đọc, đánh dấu là DELIVERED
               message.status = MESSAGE_STATUS.DELIVERED
             }
-            
+
             await message.save()
             updatedMessages.push(message)
           }
         }
-        
+
         // Cập nhật trạng thái đã đọc của cuộc trò chuyện cho người dùng hiện tại
         await ChatModel.findOneAndUpdate({ _id: chatId, participants: userId }, { read: true })
-        
+
         // Gửi thông báo đến tất cả người trong room
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
@@ -369,7 +387,7 @@ const initSocket = async (server: HttpServer) => {
             readBy: msg.readBy
           }))
         })
-        
+
         console.log(`Emitted MESSAGE_READ event to room ${chatId}`)
       } catch (error) {
         console.error('MARK_AS_READ error:', error)

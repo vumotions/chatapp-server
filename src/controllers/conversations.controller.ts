@@ -1265,7 +1265,7 @@ class ConversationsController {
         })
       }
 
-      // Không thể thay đổi vai trò của OWNER
+      // Không cho phép thay đổi vai trò của OWNER
       const targetMember = conversation.members.find(
         (member) => member.userId.toString() === targetUserId
       )
@@ -1737,6 +1737,8 @@ class ConversationsController {
       const currentUserId = req.context?.user?._id
       const { conversationId, userId: targetUserId } = req.params
 
+      console.log(`Approving join request for user ${targetUserId} in conversation ${conversationId}`)
+
       // Kiểm tra quyền
       const conversation = await ChatModel.findById(conversationId)
 
@@ -1777,26 +1779,25 @@ class ConversationsController {
       const isAlreadyMember = conversation.members.some((m) => m.userId.toString() === targetUserId)
 
       if (!isAlreadyMember) {
-        // Thêm người dùng vào nhóm chỉ khi chưa là thành viên
-        // Thêm vào participants
-        if (!conversation.participants.some((p) => p.toString() === targetUserId)) {
-          conversation.participants.push(new Schema.Types.ObjectId(targetUserId))
-        }
-
-        // Thêm vào members
-        conversation.members.push({
-          userId: new Schema.Types.ObjectId(targetUserId),
-          role: MEMBER_ROLE.MEMBER,
-          permissions: {
-            inviteUsers: true
-          },
-          joinedAt: new Date(),
-          isMuted: false,
-          mutedUntil: null
-        })
-
-        // Lưu các thay đổi
-        await conversation.save()
+        // Thay vì thêm trực tiếp vào conversation, sử dụng findByIdAndUpdate
+        await ChatModel.findByIdAndUpdate(
+          conversationId,
+          {
+            $addToSet: { participants: targetUserId },
+            $push: {
+              members: {
+                userId: targetUserId,
+                role: MEMBER_ROLE.MEMBER,
+                permissions: {
+                  inviteUsers: true
+                },
+                joinedAt: new Date(),
+                isMuted: false,
+                mutedUntil: null
+              }
+            }
+          }
+        )
 
         // Lấy thông tin người dùng
         const user = await UserModel.findById(targetUserId).select('name avatar')
@@ -1811,8 +1812,9 @@ class ConversationsController {
         })
 
         // Cập nhật lastMessage
-        conversation.lastMessage = systemMessage._id as any
-        await conversation.save()
+        await ChatModel.findByIdAndUpdate(conversationId, {
+          lastMessage: systemMessage._id
+        })
 
         // Thông báo cho người dùng đã được chấp nhận
         emitSocketEvent(targetUserId.toString(), SOCKET_EVENTS.JOIN_REQUEST_APPROVED, {

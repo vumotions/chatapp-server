@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from 'http'
 import status from 'http-status'
-import { ObjectId, Types } from 'mongoose'
+import { ObjectId, Schema, Types } from 'mongoose'
 import { Server } from 'socket.io'
 import { nanoid } from 'nanoid'
 import { env } from '~/config/env'
@@ -204,16 +204,19 @@ const initSocket = async (server: HttpServer) => {
           }
         }
 
-        // Tạo message
-        const message = await MessageModel.create({
-          chatId: finalChatId,
-          senderId: userId,
-          content,
-          attachments,
-          type,
-          status: MESSAGE_STATUS.SENT,
-          readBy: [userId]
-        })
+        // Thực hiện đồng thời việc lấy thông tin người dùng và tạo tin nhắn
+        const [sender, message] = await Promise.all([
+          UserModel.findById(userId).select('name username avatar').lean(),
+          MessageModel.create({
+            chatId: finalChatId,
+            senderId: userId,
+            content,
+            attachments,
+            type,
+            status: MESSAGE_STATUS.SENT,
+            readBy: [userId]
+          })
+        ])
 
         // Cập nhật chat
         chat.lastMessage = message._id as ObjectId
@@ -227,8 +230,8 @@ const initSocket = async (server: HttpServer) => {
         // Gửi tới tất cả user trong room với đầy đủ thông tin người gửi
         io.to(finalChatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
           ...message.toObject(),
-          senderName: socket.handshake.auth.decodedAccessToken.name || 'User',
-          senderAvatar: socket.handshake.auth.decodedAccessToken.avatar || null
+          senderName: sender?.name || sender?.username || 'Người dùng',
+          senderAvatar: sender?.avatar || null
         })
 
         // Tạo thông báo cho tất cả người tham gia trừ người gửi
@@ -256,8 +259,8 @@ const initSocket = async (server: HttpServer) => {
               ...notification.toObject(),
               sender: {
                 _id: userId,
-                name: socket.handshake.auth.decodedAccessToken.name,
-                avatar: socket.handshake.auth.decodedAccessToken.avatar
+                name: sender?.name || sender?.username || 'Người dùng',
+                avatar: sender?.avatar || null
               }
             })
           }
@@ -546,6 +549,7 @@ const initSocket = async (server: HttpServer) => {
       console.log('Test MESSAGE_DELETED event emitted')
     })
 
+    // Tối ưu hóa xử lý CHECK_NEW_MESSAGES
     socket.on('CHECK_NEW_MESSAGES', async (data) => {
       try {
         const { chatId, latestMessageId } = data
@@ -559,7 +563,7 @@ const initSocket = async (server: HttpServer) => {
           .sort({ createdAt: -1 })
           .limit(10)
           .populate('senderId', 'name avatar')
-          .setOptions({ strictPopulate: false }) // Thêm tùy chọn này nếu cần
+          .setOptions({ strictPopulate: false })
           .lean()
 
         if (newMessages.length > 0) {
@@ -599,6 +603,45 @@ const initSocket = async (server: HttpServer) => {
       // Thông báo cho tất cả người dùng biết người dùng này đã offline
       io.emit(SOCKET_EVENTS.USER_OFFLINE, userId, lastActiveMap.get(userId))
       console.log(`Broadcast user ${userId} is offline`)
+    })
+
+    // Thêm xử lý sự kiện xóa tin nhắn
+    socket.on(SOCKET_EVENTS.DELETE_MESSAGE, async (data) => {
+      try {
+        const { messageId } = data
+        const userId = socket.handshake.auth.decodedAccessToken.userId
+
+        // Tìm tin nhắn
+        const message = await MessageModel.findById(messageId)
+        if (!message) {
+          return socket.emit(SOCKET_EVENTS.ERROR, { message: 'Message not found' })
+        }
+
+        const chatId = message.chatId.toString()
+
+        // Xóa tin nhắn
+        await MessageModel.findByIdAndDelete(messageId)
+
+        // Cập nhật lastMessage nếu cần
+        const chat = await ChatModel.findById(chatId)
+        if (chat && chat.lastMessage && chat.lastMessage.toString() === messageId) {
+          const lastMessage = await MessageModel.findOne({ chatId })
+            .sort({ createdAt: -1 })
+            .limit(1)
+
+          chat.lastMessage = lastMessage ? (lastMessage._id as Schema.Types.ObjectId) : undefined
+          await chat.save()
+        }
+
+        // Phát sóng sự kiện MESSAGE_DELETED đến tất cả người dùng trong chat
+        io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
+          messageId,
+          chatId
+        })
+      } catch (error) {
+        console.error('DELETE_MESSAGE error:', error)
+        socket.emit(SOCKET_EVENTS.ERROR, { message: 'Xóa tin nhắn thất bại' })
+      }
     })
   })
 

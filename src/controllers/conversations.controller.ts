@@ -1522,26 +1522,29 @@ class ConversationsController {
               type: NOTIFICATION_TYPE.JOIN_REQUEST,
               'metadata.conversationId': conversation._id,
               'metadata.invitedBy': userId
-            });
+            })
 
-            let notification;
-            
+            let notification
+
             if (existingNotification) {
               // Nếu đã có thông báo, cập nhật lại thay vì tạo mới
-              existingNotification.read = false;
-              existingNotification.processed = false;
-              existingNotification.content = `${req.context?.user?.name || 'Một thành viên'} đã gửi yêu cầu tham gia nhóm ${conversation.name}`;
+              existingNotification.read = false
+              existingNotification.processed = false
+              existingNotification.set(
+                'content',
+                `${req.context?.user?.name || 'Một thành viên'} đã gửi yêu cầu tham gia nhóm ${conversation.name}`
+              )
               existingNotification.metadata = {
                 conversationId: conversation._id,
                 chatName: conversation.name,
                 isGroup: true,
                 requestingUser: userId
-              };
+              }
               // Cập nhật thời gian tạo để đưa thông báo lên đầu
-              existingNotification.set('createdAt', new Date());
-              
-              await existingNotification.save();
-              notification = existingNotification;
+              existingNotification.set('createdAt', new Date())
+
+              await existingNotification.save()
+              notification = existingNotification
             } else {
               // Tạo thông báo mới nếu chưa có
               notification = await NotificationModel.create({
@@ -1558,11 +1561,11 @@ class ConversationsController {
                 processed: false,
                 senderId: userId,
                 relatedId: conversation._id
-              });
+              })
             }
 
             // Lấy thông tin người gửi để gửi kèm thông báo
-            const sender = await UserModel.findById(userId).select('name avatar');
+            const sender = await UserModel.findById(userId).select('name avatar')
 
             // Chuẩn bị thông báo để gửi qua socket
             const notificationToSend = {
@@ -1572,13 +1575,13 @@ class ConversationsController {
                 name: sender?.name,
                 avatar: sender?.avatar
               }
-            };
+            }
 
             emitSocketEvent(
               admin.userId.toString(),
               SOCKET_EVENTS.NOTIFICATION_NEW,
               notificationToSend
-            );
+            )
 
             // Gửi thêm sự kiện NEW_JOIN_REQUEST để đảm bảo tương thích
             emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.NEW_JOIN_REQUEST, {
@@ -1586,9 +1589,9 @@ class ConversationsController {
               invitedBy: userId,
               userIds: [userId],
               notification: notificationToSend // Gửi kèm thông báo đầy đủ
-            });
+            })
           } catch (error) {
-            console.error('Error creating notification:', error);
+            console.error('Error creating notification:', error)
           }
         }
 
@@ -1597,7 +1600,7 @@ class ConversationsController {
           emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.JOIN_REQUEST_RECEIVED, {
             conversationId: conversation._id,
             userId
-          });
+          })
         }
 
         res.json(
@@ -1740,31 +1743,31 @@ class ConversationsController {
       }
 
       // Kiểm tra xem người dùng đã có trong members chưa
-      const isAlreadyMember = conversation.members.some(m => m.userId.toString() === targetUserId)
-      
+      const isAlreadyMember = conversation.members.some((m) => m.userId.toString() === targetUserId)
+
       if (!isAlreadyMember) {
         // Thêm người dùng vào nhóm chỉ khi chưa là thành viên
         // Thêm vào participants
-        if (!conversation.participants.some(p => p.toString() === targetUserId)) {
-          conversation.participants.push(targetUserId)
+        if (!conversation.participants.some((p) => p.toString() === targetUserId)) {
+          conversation.participants.push(new Schema.Types.ObjectId(targetUserId))
         }
-        
+
         // Thêm vào members
         conversation.members.push({
-          userId: targetUserId,
+          userId: new Schema.Types.ObjectId(targetUserId),
           role: MEMBER_ROLE.MEMBER,
           permissions: {
             inviteUsers: true
           },
           joinedAt: new Date()
         })
-        
+
         // Lưu các thay đổi
         await conversation.save()
-        
+
         // Lấy thông tin người dùng
         const user = await UserModel.findById(targetUserId).select('name avatar')
-        
+
         // Tạo tin nhắn hệ thống - CHỈ TẠO KHI THỰC SỰ THÊM THÀNH VIÊN MỚI
         const systemMessage = await MessageModel.create({
           chatId: conversation._id,
@@ -1773,11 +1776,11 @@ class ConversationsController {
           type: MESSAGE_TYPE.SYSTEM,
           status: MESSAGE_STATUS.DELIVERED
         })
-        
+
         // Cập nhật lastMessage
-        conversation.lastMessage = systemMessage._id
+        conversation.lastMessage = systemMessage._id as any
         await conversation.save()
-        
+
         // Thông báo cho người dùng đã được chấp nhận
         emitSocketEvent(targetUserId.toString(), SOCKET_EVENTS.JOIN_REQUEST_APPROVED, {
           conversationId: conversation._id,
@@ -2121,27 +2124,30 @@ class ConversationsController {
               type: NOTIFICATION_TYPE.JOIN_REQUEST,
               'metadata.conversationId': conversation._id,
               'metadata.invitedBy': userId
-            });
+            })
 
-            let notification;
-            
+            let notification
+
             if (existingNotification) {
               // Nếu đã có thông báo, cập nhật lại thay vì tạo mới
-              existingNotification.read = false;
-              existingNotification.processed = false;
-              existingNotification.content = `${inviter?.name || 'Một thành viên'} đã mời ${newPendingUserIds.length} người vào nhóm ${conversation.name || 'của bạn'}`;
+              existingNotification.read = false
+              existingNotification.processed = false
+              existingNotification.set(
+                'content',
+                `${inviter?.name || 'Một thành viên'} đã mời ${newPendingUserIds.length} người vào nhóm ${conversation.name || 'của bạn'}`
+              )
               existingNotification.metadata = {
                 conversationId: conversation._id,
                 chatName: conversation.name || 'Nhóm chat',
                 invitedBy: userId,
                 userIds: newPendingUserIds,
                 timestamp: new Date() // Thêm timestamp mới
-              };
+              }
               // Cập nhật thời gian tạo để đưa thông báo lên đầu
-              existingNotification.set('createdAt', new Date());
-              
-              await existingNotification.save();
-              notification = existingNotification;
+              existingNotification.set('createdAt', new Date())
+
+              await existingNotification.save()
+              notification = existingNotification
             } else {
               // Tạo thông báo mới nếu chưa có
               notification = await NotificationModel.create({
@@ -2158,11 +2164,11 @@ class ConversationsController {
                 processed: false,
                 senderId: userId,
                 relatedId: conversation._id
-              });
+              })
             }
 
             // Lấy thông tin người gửi để gửi kèm thông báo
-            const sender = await UserModel.findById(userId).select('name avatar');
+            const sender = await UserModel.findById(userId).select('name avatar')
 
             // Chuẩn bị thông báo để gửi qua socket
             const notificationToSend = {
@@ -2172,13 +2178,13 @@ class ConversationsController {
                 name: sender?.name,
                 avatar: sender?.avatar
               }
-            };
+            }
 
             emitSocketEvent(
               admin.userId.toString(),
               SOCKET_EVENTS.NOTIFICATION_NEW,
               notificationToSend
-            );
+            )
 
             // Gửi thêm sự kiện NEW_JOIN_REQUEST để đảm bảo tương thích
             emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.NEW_JOIN_REQUEST, {
@@ -2186,9 +2192,9 @@ class ConversationsController {
               invitedBy: userId,
               userIds: newPendingUserIds,
               notification: notificationToSend // Gửi kèm thông báo đầy đủ
-            });
+            })
           } catch (error) {
-            console.error('Error creating notification:', error);
+            console.error('Error creating notification:', error)
           }
         }
 
@@ -2620,10 +2626,15 @@ class ConversationsController {
 
       // Kiểm tra quyền
       const member = conversation.members.find((m) => m.userId.toString() === String(userId))
+
+      if (!member) {
+        throw new AppError({ message: 'Bạn không phải là thành viên của nhóm này', status: 403 })
+      }
+
+      // Sửa lại điều kiện kiểm tra quyền
       const canChangeInfo =
-        member?.role === MEMBER_ROLE.OWNER ||
-        member?.role === MEMBER_ROLE.ADMIN ||
-        member?.permissions?.changeGroupInfo
+        member.role === MEMBER_ROLE.OWNER ||
+        (member.role === MEMBER_ROLE.ADMIN && member.permissions?.changeGroupInfo)
 
       if (!canChangeInfo) {
         throw new AppError({

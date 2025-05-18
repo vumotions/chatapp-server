@@ -316,7 +316,7 @@ class ConversationsController {
 
       // Đánh dấu tất cả tin nhắn trong cuộc trò chuyện là đã đọc
       // Chỉ đánh dấu tin nhắn của người khác gửi, không phải tin nhắn của chính mình
-      await MessageModel.updateMany(
+      const updatedMessages = await MessageModel.updateMany(
         {
           chatId,
           senderId: { $ne: userId }, // Không phải tin nhắn của người dùng hiện tại
@@ -330,8 +330,13 @@ class ConversationsController {
       if (io) {
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
-          messageIds: [], // Không cần gửi messageIds cụ thể, chỉ cần chatId
-          readBy: userId
+          messageIds: updatedMessages.map(msg => msg._id.toString()),
+          readBy: userId,
+          messages: updatedMessages.map(msg => ({
+            _id: msg._id.toString(),
+            status: msg.status,
+            readBy: msg.readBy.map(id => id.toString())
+          }))
         })
       }
 
@@ -1823,8 +1828,7 @@ class ConversationsController {
       // Kiểm tra quyền phê duyệt
       const canApprove =
         currentMember.role === MEMBER_ROLE.OWNER ||
-        currentMember.role === MEMBER_ROLE.ADMIN ||
-        currentMember.permissions?.approveJoinRequests
+        (currentMember.role === MEMBER_ROLE.ADMIN && currentMember.permissions?.approveJoinRequests)
 
       if (!canApprove) {
         return next(
@@ -3504,6 +3508,8 @@ class ConversationsController {
       const { onlyAdminsCanSend, duration } = req.body
       const userId = req.context?.user?._id
 
+      console.log('Received request:', { conversationId, onlyAdminsCanSend, duration })
+
       // Tìm cuộc trò chuyện
       const conversation = await ChatModel.findById(conversationId)
       if (!conversation) {
@@ -3526,29 +3532,33 @@ class ConversationsController {
         )
       }
 
+      // Chỉ owner mới có quyền cập nhật cài đặt tin nhắn
       const isOwner = member.role === MEMBER_ROLE.OWNER
-      const isAdmin = member.role === MEMBER_ROLE.ADMIN
-      const canChangeGroupInfo = isOwner || (isAdmin && member.permissions?.changeGroupInfo)
-
-      if (!canChangeGroupInfo) {
+      if (!isOwner) {
         return next(
           new AppError({
             status: status.FORBIDDEN,
-            message: 'Bạn không có quyền thay đổi cài đặt nhóm'
+            message: 'Chỉ chủ nhóm mới có quyền thay đổi cài đặt này'
           })
         )
       }
 
-      // Tính thời gian hết hạn nếu có
-      let restrictUntil = null
-      if (duration && duration > 0) {
-        restrictUntil = new Date()
-        restrictUntil.setMinutes(restrictUntil.getMinutes() + duration)
-      }
-
       // Cập nhật cài đặt
       conversation.onlyAdminsCanSend = onlyAdminsCanSend
-      conversation.restrictUntil = restrictUntil
+
+      // Xử lý restrictUntil dựa trên duration
+      if (onlyAdminsCanSend && duration && duration > 0) {
+        // Tạo thời gian hết hạn bằng cách thêm duration phút vào thời gian hiện tại
+        const restrictUntil = new Date()
+        restrictUntil.setMinutes(restrictUntil.getMinutes() + duration)
+        conversation.restrictUntil = restrictUntil
+        console.log('Setting restrictUntil to:', restrictUntil)
+      } else {
+        // Nếu không có duration hoặc duration <= 0, đặt restrictUntil = null (vô thời hạn)
+        conversation.restrictUntil = null
+        console.log('Setting restrictUntil to null')
+      }
+
       await conversation.save()
 
       // Tạo tin nhắn hệ thống
@@ -3556,12 +3566,14 @@ class ConversationsController {
       let systemMessage
 
       if (onlyAdminsCanSend) {
-        const durationText = restrictUntil ? `trong ${duration} phút` : 'cho đến khi có thay đổi'
+        const durationText = conversation.restrictUntil
+          ? `đến ${new Date(conversation.restrictUntil).toLocaleString('vi-VN')}`
+          : 'cho đến khi có thay đổi'
 
         systemMessage = await MessageModel.create({
           chatId: conversation._id,
           senderId: userId,
-          content: `${user?.name || 'Quản trị viên'} đã bật chế độ "Chỉ quản trị viên được gửi tin nhắn" ${durationText}`,
+          content: `${user?.name || 'Chủ nhóm'} đã bật chế độ "Chỉ quản trị viên được gửi tin nhắn" ${durationText}`,
           type: MESSAGE_TYPE.SYSTEM,
           status: MESSAGE_STATUS.DELIVERED
         })
@@ -3569,7 +3581,7 @@ class ConversationsController {
         systemMessage = await MessageModel.create({
           chatId: conversation._id,
           senderId: userId,
-          content: `${user?.name || 'Quản trị viên'} đã tắt chế độ "Chỉ quản trị viên được gửi tin nhắn"`,
+          content: `${user?.name || 'Chủ nhóm'} đã tắt chế độ "Chỉ quản trị viên được gửi tin nhắn"`,
           type: MESSAGE_TYPE.SYSTEM,
           status: MESSAGE_STATUS.DELIVERED
         })
@@ -3583,7 +3595,7 @@ class ConversationsController {
       emitSocketEvent(conversationId, SOCKET_EVENTS.GROUP_SETTINGS_UPDATED, {
         conversationId,
         onlyAdminsCanSend,
-        restrictUntil,
+        restrictUntil: conversation.restrictUntil,
         updatedBy: userId,
         message: systemMessage
       })
@@ -3594,11 +3606,12 @@ class ConversationsController {
           data: {
             conversationId,
             onlyAdminsCanSend,
-            restrictUntil
+            restrictUntil: conversation.restrictUntil
           }
         })
       )
     } catch (error) {
+      console.error('Error updating send message restriction:', error)
       next(error)
     }
   }

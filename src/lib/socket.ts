@@ -237,9 +237,10 @@ const initSocket = async (server: HttpServer) => {
         // Gửi tới tất cả user trong room với đầy đủ thông tin người gửi
         io.to(finalChatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
           ...message.toObject(),
-          senderId: senderInfo, // Gửi senderId là một object chứa đầy đủ thông tin
-          senderName: senderInfo.name, // Giữ lại để tương thích ngược
-          senderAvatar: senderInfo.avatar // Giữ lại để tương thích ngược
+          senderId: userId.toString(), // Gửi senderId dưới dạng string
+          senderInfo: senderInfo, // Gửi thông tin người gửi dưới dạng object riêng biệt
+          senderName: senderInfo.name,
+          senderAvatar: senderInfo.avatar
         })
 
         // Tạo thông báo cho tất cả người tham gia trừ người gửi
@@ -387,7 +388,7 @@ const initSocket = async (server: HttpServer) => {
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
           messageIds,
-          readBy: userId,
+          readBy: userId.toString(), // Đảm bảo là string
           messages: updatedMessages.map((msg) => ({
             _id: msg._id,
             status: msg.status,

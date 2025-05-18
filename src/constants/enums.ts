@@ -91,3 +91,16 @@ export enum JOIN_REQUEST_STATUS {
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED'
 }
+
+export enum CALL_TYPE {
+  AUDIO = 'AUDIO',
+  VIDEO = 'VIDEO'
+}
+
+export enum CALL_STATUS {
+  RINGING = 'RINGING',
+  ONGOING = 'ONGOING',
+  MISSED = 'MISSED',
+  REJECTED = 'REJECTED',
+  ENDED = 'ENDED'
+}

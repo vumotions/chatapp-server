@@ -73,9 +73,6 @@ conversationsRoutes.delete(
   wrapRequestHandler(conversationsController.deleteConversation)
 )
 
-// Thêm route test socket
-conversationsRoutes.post('/test-socket', accessTokenValidator, conversationsController.testSocket)
-
 // Sửa lại route cho archived chats
 conversationsRoutes.get(
   '/archived',

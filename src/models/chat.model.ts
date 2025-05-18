@@ -35,6 +35,8 @@ export interface IChat extends Document {
     requestedAt: Date
     processedAt: Date
     status: string
+    invitedBy?: Schema.Types.ObjectId
+    processedBy?: Schema.Types.ObjectId
   }>
   formerMembers?: IFormerMember[]
   // Thêm các trường mới cho chức năng "Chỉ owner và admin được gửi tin nhắn"
@@ -113,6 +115,10 @@ const joinRequestSchema = new Schema(
     // Thêm trường processedAt và processedBy
     processedAt: {
       type: Date
+    },
+    processedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
   { _id: false }

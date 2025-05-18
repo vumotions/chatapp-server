@@ -6,6 +6,14 @@ import { wrapRequestHandler } from '~/helpers/handler'
 
 const postsRoutes = Router()
 
+// Đảm bảo route này được cấu hình đúng
+postsRoutes.get(
+  '/get-posts',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.getPost)
+)
+
 // Create a new post
 postsRoutes.post(
   '/create-post',
@@ -13,14 +21,6 @@ postsRoutes.post(
   accessTokenValidator,
   verifiedUserValidator,
   wrapRequestHandler(postController.uploadeAPost)
-)
-
-// Get posts with filters
-postsRoutes.get(
-  '/get-posts',
-  accessTokenValidator,
-  verifiedUserValidator,
-  wrapRequestHandler(postController.getPost)
 )
 
 // Like a post
@@ -53,6 +53,37 @@ postsRoutes.post(
   accessTokenValidator,
   verifiedUserValidator,
   wrapRequestHandler(postController.createComment)
+)
+
+// Thêm routes cho like/unlike comment
+postsRoutes.post(
+  '/comments/like',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.likeComment)
+)
+
+postsRoutes.delete(
+  '/comments/like/:commentId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.unlikeComment)
+)
+
+// Thêm route cho chức năng chia sẻ bài viết
+postsRoutes.post(
+  '/share',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.sharePost)
+)
+
+// Thêm route để lấy bài viết của người dùng theo userId
+postsRoutes.get(
+  '/user/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.getUserPosts)
 )
 
 export default postsRoutes

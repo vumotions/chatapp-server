@@ -13,19 +13,35 @@ notificationRoutes.get(
 )
 
 // Đánh dấu một thông báo đã đọc
-notificationRoutes.post(
-  '/read',
+notificationRoutes.patch(
+  '/:notificationId/read',
   accessTokenValidator,
   verifiedUserValidator,
   notificationController.markAsRead
 )
 
 // Đánh dấu tất cả thông báo đã đọc
-notificationRoutes.post(
+notificationRoutes.patch(
   '/read-all',
   accessTokenValidator,
   verifiedUserValidator,
   notificationController.markAllAsRead
+)
+
+// Xóa một thông báo
+notificationRoutes.delete(
+  '/:notificationId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  notificationController.deleteNotification
+)
+
+// Xóa tất cả thông báo
+notificationRoutes.delete(
+  '/',
+  accessTokenValidator,
+  verifiedUserValidator,
+  notificationController.deleteAllNotifications
 )
 
 export default notificationRoutes

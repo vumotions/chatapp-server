@@ -7,6 +7,13 @@ export interface INotification extends Document {
   type: NOTIFICATION_TYPE
   relatedId: ObjectId
   read: boolean
+  processed: boolean
+  metadata?: {
+    chatId?: string
+    chatName?: string
+    isGroup?: boolean
+    [key: string]: any
+  }
 }
 
 const notificationSchema = new Schema<INotification>(
@@ -30,6 +37,18 @@ const notificationSchema = new Schema<INotification>(
       required: true
     },
     read: {
+      type: Boolean,
+      default: false
+    },
+    processed: {
+      type: Boolean,
+      default: false
+    },
+    metadata: {
+      type: Schema.Types.Mixed,
+      default: {}
+    },
+    deleted: {
       type: Boolean,
       default: false
     }

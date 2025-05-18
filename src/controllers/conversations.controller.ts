@@ -354,48 +354,66 @@ class ConversationsController {
 
       console.log('Deleting message:', messageId, 'by user:', userId)
 
-      // Kiểm tra messageId
-      if (!messageId) {
-        return next(
-          new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Message ID is required'
-          })
-        )
-      }
-
       // Tìm tin nhắn
       const message = await MessageModel.findById(messageId)
       console.log('Found message:', message)
 
-      // Kiểm tra tin nhắn tồn tại
       if (!message) {
         return next(
           new AppError({
             status: status.NOT_FOUND,
-            message: 'Message not found'
+            message: 'Không tìm thấy tin nhắn'
           })
         )
       }
 
-      // Kiểm tra người dùng có quyền xóa tin nhắn không
-      if (message.senderId.toString() !== userId?.toString()) {
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(message.chatId)
+      console.log('Found conversation:', conversation?._id)
+
+      if (!conversation) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
-            message: 'You do not have permission to delete this message'
+            status: status.NOT_FOUND,
+            message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
       }
 
-      // Kiểm tra loại tin nhắn (chỉ cho phép xóa tin nhắn văn bản)
-      if (message.type !== 'TEXT') {
-        return next(
-          new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Only text messages can be deleted'
-          })
+      // Kiểm tra xem người dùng có quyền xóa tin nhắn không
+      const isMessageSender = message.senderId.toString() === userId?.toString()
+      console.log('Is message sender:', isMessageSender)
+
+      // Nếu không phải người gửi tin nhắn, kiểm tra quyền xóa tin nhắn của người khác
+      if (!isMessageSender) {
+        // Tìm thông tin thành viên
+        const member = conversation.members.find(
+          (member) => member.userId.toString() === userId?.toString()
         )
+
+        // Kiểm tra xem có phải là owner hoặc admin có quyền xóa tin nhắn không
+        const isOwner = member?.role === MEMBER_ROLE.OWNER
+        const isAdmin = member?.role === MEMBER_ROLE.ADMIN
+        const hasDeletePermission = member?.permissions?.deleteMessages === true
+
+        // Kiểm tra xem người gửi tin nhắn có phải là owner không
+        const messageSenderMember = conversation.members.find(
+          (member) => member.userId.toString() === message.senderId.toString()
+        )
+        const isMessageFromOwner = messageSenderMember?.role === MEMBER_ROLE.OWNER
+
+        // Admin không thể xóa tin nhắn của owner
+        const canDeleteOthersMessages =
+          isOwner || (isAdmin && hasDeletePermission && !isMessageFromOwner)
+
+        if (!canDeleteOthersMessages) {
+          return next(
+            new AppError({
+              status: status.FORBIDDEN,
+              message: 'Bạn không có quyền xóa tin nhắn này'
+            })
+          )
+        }
       }
 
       // Xóa tin nhắn
@@ -403,10 +421,7 @@ class ConversationsController {
       console.log('Message deleted successfully')
 
       // Cập nhật lastMessage của chat nếu tin nhắn bị xóa là tin nhắn cuối cùng
-      const chat = await ChatModel.findById(message.chatId)
-      console.log('Found chat:', chat?._id)
-
-      if (chat && chat.lastMessage && chat.lastMessage.toString() === messageId) {
+      if (conversation.lastMessage && conversation.lastMessage.toString() === messageId) {
         console.log('Updating lastMessage for chat')
         // Tìm tin nhắn cuối cùng mới
         const lastMessage = await MessageModel.findOne({ chatId: message.chatId })
@@ -414,10 +429,10 @@ class ConversationsController {
           .limit(1)
 
         // Cập nhật lastMessage
-        chat.lastMessage = lastMessage
+        conversation.lastMessage = lastMessage
           ? (lastMessage._id as unknown as Schema.Types.ObjectId)
           : undefined
-        await chat.save()
+        await conversation.save()
         console.log('Chat updated with new lastMessage:', lastMessage?._id)
       }
 
@@ -425,11 +440,13 @@ class ConversationsController {
       const chatId = message.chatId.toString()
       const eventData = {
         messageId,
-        chatId
+        chatId,
+        deletedBy: userId,
+        isAdminDelete: !isMessageSender
       }
 
       // Sử dụng hàm helper để gửi sự kiện
-      const emitted = emitSocketEvent(chatId, 'MESSAGE_DELETED', eventData)
+      const emitted = emitSocketEvent(chatId, SOCKET_EVENTS.MESSAGE_DELETED, eventData)
       if (emitted) {
         console.log('MESSAGE_DELETED event emitted successfully')
       } else {
@@ -439,7 +456,7 @@ class ConversationsController {
       res.json(
         new AppSuccess({
           data: { messageId },
-          message: 'Message deleted successfully'
+          message: 'Tin nhắn đã được xóa'
         })
       )
     } catch (error) {
@@ -1023,6 +1040,43 @@ class ConversationsController {
         )
       }
 
+      // Kiểm tra quyền ghim tin nhắn
+      const member = chat.members.find((member) => member.userId.toString() === userId?.toString())
+
+      // Nếu không tìm thấy thông tin thành viên
+      if (!member) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
+          })
+        )
+      }
+
+      const isOwner = member.role === MEMBER_ROLE.OWNER
+      const isAdmin = member.role === MEMBER_ROLE.ADMIN
+      const hasPinPermission = member.permissions?.pinMessages === true
+
+      // Kiểm tra xem người gửi tin nhắn có phải là owner không
+      const messageSenderMember = chat.members.find(
+        (member) => member.userId.toString() === message.senderId.toString()
+      )
+      const isMessageFromOwner = messageSenderMember?.role === MEMBER_ROLE.OWNER
+
+      // Chỉ owner hoặc admin có quyền pinMessages mới có thể ghim/bỏ ghim tin nhắn
+      // Admin không thể ghim/bỏ ghim tin nhắn của owner
+      const canPinMessage = isOwner || (isAdmin && hasPinPermission && !isMessageFromOwner)
+
+      // Thành viên thường không có quyền ghim tin nhắn
+      if (!canPinMessage) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không có quyền ghim/bỏ ghim tin nhắn này'
+          })
+        )
+      }
+
       // Cập nhật trạng thái ghim của tin nhắn
       message.isPinned = !message.isPinned
       await message.save()
@@ -1216,20 +1270,12 @@ class ConversationsController {
     }
   }
 
+  // Phương thức cập nhật vai trò thành viên trong nhóm
   async updateGroupMemberRole(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = req.context?.user?._id as Types.ObjectId | string
-      // Lấy conversationId từ params
       const { conversationId } = req.params
       const { userId: targetUserId, role, permissions, customTitle } = req.body
-
-      console.log('Update member role request:', {
-        currentUserId: userId,
-        conversationId,
-        targetUserId,
-        role,
-        permissions
-      })
+      const userId = req.context?.user?._id
 
       // Kiểm tra xem người dùng có quyền thay đổi vai trò không
       const conversation = await ChatModel.findById(conversationId)
@@ -1239,7 +1285,7 @@ class ConversationsController {
 
       // Kiểm tra xem người dùng hiện tại có phải là thành viên của nhóm không
       const currentMember = conversation.members.find(
-        (member) => member.userId.toString() === userId.toString()
+        (member) => member.userId.toString() === userId?.toString()
       )
 
       if (!currentMember) {
@@ -1247,8 +1293,8 @@ class ConversationsController {
       }
 
       // Kiểm tra quyền (chỉ OWNER hoặc ADMIN có quyền thay đổi vai trò)
-      const isAdmin =
-        currentMember.role === MEMBER_ROLE.OWNER || currentMember.role === MEMBER_ROLE.ADMIN
+      const isOwner = currentMember.role === MEMBER_ROLE.OWNER
+      const isAdmin = isOwner || currentMember.role === MEMBER_ROLE.ADMIN
 
       if (!isAdmin) {
         throw new AppError({
@@ -1257,109 +1303,109 @@ class ConversationsController {
         })
       }
 
-      // Nếu không phải OWNER thì không thể thăng cấp người khác lên ADMIN
-      if (currentMember.role !== MEMBER_ROLE.OWNER && role === MEMBER_ROLE.ADMIN) {
-        throw new AppError({
-          message: 'Chỉ chủ nhóm mới có thể thăng cấp thành viên lên quản trị viên',
-          status: 403
-        })
-      }
-
-      // Không cho phép thay đổi vai trò của OWNER
+      // Tìm thành viên cần cập nhật
       const targetMember = conversation.members.find(
         (member) => member.userId.toString() === targetUserId
       )
 
-      if (targetMember && targetMember.role === MEMBER_ROLE.OWNER) {
+      if (!targetMember) {
+        throw new AppError({
+          message: 'Không tìm thấy thành viên trong nhóm',
+          status: 404
+        })
+      }
+
+      // Không cho phép thay đổi vai trò của OWNER
+      if (targetMember.role === MEMBER_ROLE.OWNER) {
         throw new AppError({
           message: 'Không thể thay đổi vai trò của chủ nhóm',
           status: 403
         })
       }
 
-      // Cập nhật vai trò và quyền của thành viên
-      let memberIndex = conversation.members.findIndex(
+      // Không cho phép admin thay đổi vai trò của admin khác (chỉ owner có thể làm điều này)
+      if (targetMember.role === MEMBER_ROLE.ADMIN && !isOwner) {
+        throw new AppError({
+          message: 'Chỉ chủ nhóm mới có thể thay đổi vai trò của quản trị viên khác',
+          status: 403
+        })
+      }
+
+      // Nếu không phải OWNER thì kiểm tra quyền thăng cấp người khác lên ADMIN
+      if (!isOwner && role === MEMBER_ROLE.ADMIN) {
+        // Kiểm tra xem người dùng có quyền thêm admin mới không
+        if (!currentMember.permissions?.addNewAdmins) {
+          throw new AppError({
+            message: 'Bạn không có quyền thăng cấp thành viên lên quản trị viên',
+            status: 403
+          })
+        }
+
+        // Giới hạn quyền khi admin thăng cấp thành viên lên admin mới
+        if (permissions) {
+          permissions.addNewAdmins = false
+          permissions.banUsers = false
+          permissions.approveJoinRequests = false
+        }
+      }
+
+      // Tìm index của thành viên cần cập nhật
+      const memberIndex = conversation.members.findIndex(
         (member) => member.userId.toString() === targetUserId
       )
 
-      // Xác định quyền dựa trên vai trò mới
-      let updatedPermissions = permissions // Mặc định sử dụng quyền từ request
-
-      // Nếu chuyển từ ADMIN xuống MEMBER, reset quyền về mặc định của MEMBER
-      if (role === MEMBER_ROLE.MEMBER && targetMember?.role === MEMBER_ROLE.ADMIN) {
-        updatedPermissions = {
-          changeGroupInfo: false,
-          deleteMessages: false,
-          banUsers: false,
-          inviteUsers: true,
-          pinMessages: false,
-          addNewAdmins: false,
-          approveJoinRequests: false
+      if (memberIndex !== -1) {
+        // Cập nhật trực tiếp vào mảng members
+        if (role) {
+          conversation.members[memberIndex].role = role
         }
-      }
-
-      if (memberIndex === -1) {
-        // Nếu thành viên chưa có trong danh sách members, thêm mới
-        conversation.members.push({
-          userId: new Schema.Types.ObjectId(targetUserId),
-          role,
-          permissions: updatedPermissions || {}, // Đảm bảo không bị null/undefined
-          customTitle,
-          joinedAt: new Date(),
-          isMuted: false,
-          mutedUntil: null
-        })
-      } else {
-        // Cập nhật thông tin thành viên
-        conversation.members[memberIndex].role = role
-
-        if (updatedPermissions) {
-          conversation.members[memberIndex].permissions = updatedPermissions
+        if (permissions) {
+          conversation.members[memberIndex].permissions = permissions
         }
-
         if (customTitle !== undefined) {
           conversation.members[memberIndex].customTitle = customTitle
         }
-      }
 
-      await conversation.save()
+        // Lấy thành viên đã cập nhật để trả về
+        const updatedMember = conversation.members[memberIndex]
 
-      // Tạo tin nhắn hệ thống thông báo thay đổi vai trò
-      const currentUser = await UserModel.findById(userId).select('name')
-      const targetUser = await UserModel.findById(targetUserId).select('name')
+        // Lấy thông tin người dùng được thay đổi vai trò
+        const targetUser = await UserModel.findById(targetUserId).select('name')
 
-      const systemMessage = await MessageModel.create({
-        chatId: conversation._id,
-        senderId: userId,
-        content: `${currentUser?.name || 'Người dùng'} đã thay đổi vai trò của ${targetUser?.name || 'thành viên'} thành ${role === MEMBER_ROLE.ADMIN ? 'Quản trị viên' : 'Thành viên'}`,
-        type: MESSAGE_TYPE.SYSTEM,
-        status: MESSAGE_STATUS.DELIVERED
-      })
-
-      // Cập nhật lastMessage
-      conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
-      await conversation.save()
-
-      // Thông báo cho tất cả thành viên trong nhóm
-      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.MEMBER_ROLE_UPDATED, {
-        conversationId,
-        userId: targetUserId,
-        role,
-        permissions: updatedPermissions,
-        customTitle,
-        updatedBy: userId,
-        message: systemMessage
-      })
-
-      res.json(
-        new AppSuccess({
-          message: 'Cập nhật vai trò thành công',
-          data: {
-            conversation,
-            message: systemMessage
-          }
+        // Tạo tin nhắn hệ thống thông báo thay đổi vai trò
+        const systemMessage = await MessageModel.create({
+          chatId: conversation._id,
+          senderId: userId,
+          content: `${req.context?.user?.name || 'Người dùng'} đã thay đổi vai trò của ${targetUser?.name || 'thành viên'} thành ${role === MEMBER_ROLE.ADMIN ? 'Quản trị viên' : 'Thành viên thường'}`,
+          type: MESSAGE_TYPE.SYSTEM,
+          status: MESSAGE_STATUS.DELIVERED
         })
-      )
+
+        // Cập nhật lastMessage cho cuộc trò chuyện
+        conversation.lastMessage = systemMessage._id as any
+        await conversation.save()
+
+        // Thông báo cho tất cả thành viên về thay đổi
+        emitSocketEvent(conversationId, SOCKET_EVENTS.MEMBER_ROLE_UPDATED, {
+          conversationId,
+          userId: targetUserId,
+          role,
+          permissions: updatedMember.permissions,
+          customTitle: updatedMember.customTitle,
+          updatedBy: userId,
+          message: systemMessage
+        })
+
+        res.json(
+          new AppSuccess({
+            data: {
+              member: updatedMember,
+              message: systemMessage
+            },
+            message: 'Cập nhật vai trò thành viên thành công'
+          })
+        )
+      }
     } catch (error) {
       console.error('Error in updateGroupMemberRole:', error)
       next(error)
@@ -1697,13 +1743,15 @@ class ConversationsController {
     try {
       const userId = req.context?.user?._id
       const { conversationId } = req.params
+      const { status } = req.query // Thêm tham số status để lọc theo trạng thái
 
-      console.log('Getting join requests for conversation:', conversationId)
+      console.log('Getting join requests for conversation:', conversationId, 'with status:', status)
 
       // Kiểm tra quyền
       const conversation = await ChatModel.findById(conversationId)
         .populate('pendingRequests.userId', 'name avatar username')
         .populate('pendingRequests.invitedBy', 'name avatar username')
+        .populate('pendingRequests.processedBy', 'name avatar username')
 
       if (!conversation) {
         throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
@@ -1719,11 +1767,18 @@ class ConversationsController {
         throw new AppError({ message: 'Bạn không có quyền xem yêu cầu tham gia', status: 403 })
       }
 
-      // Trả về danh sách yêu cầu tham gia đã được populate đầy đủ thông tin
+      // Lọc yêu cầu theo trạng thái nếu có
+      let requests = conversation.pendingRequests || []
+
+      if (status) {
+        requests = requests.filter((req) => req.status === status)
+      }
+
+      // Trả về danh sách yêu cầu tham gia đã được lọc
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách yêu cầu tham gia thành công',
-          data: conversation.pendingRequests
+          data: requests
         })
       )
     } catch (error) {
@@ -1732,168 +1787,321 @@ class ConversationsController {
     }
   }
 
+  // Phê duyệt yêu cầu tham gia
   async approveJoinRequest(req: Request, res: Response, next: NextFunction) {
     try {
+      const { conversationId, userId } = req.params
       const currentUserId = req.context?.user?._id
-      const { conversationId, userId: targetUserId } = req.params
 
-      console.log(`Approving join request for user ${targetUserId} in conversation ${conversationId}`)
+      console.log(`Approving join request for user ${userId} in conversation ${conversationId}`)
 
-      // Kiểm tra quyền
+      // Tìm cuộc trò chuyện
       const conversation = await ChatModel.findById(conversationId)
-
       if (!conversation) {
-        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
       }
 
-      // Kiểm tra xem người dùng có quyền phê duyệt yêu cầu tham gia không
-      const member = conversation.members.find((m) => m.userId.toString() === String(currentUserId))
-      const isOwnerOrAdmin =
-        member?.role === MEMBER_ROLE.OWNER || member?.role === MEMBER_ROLE.ADMIN
-      const canApprove = isOwnerOrAdmin || member?.permissions?.approveJoinRequests
+      // Kiểm tra quyền phê duyệt
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === currentUserId?.toString()
+      )
+
+      if (!currentMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this conversation'
+          })
+        )
+      }
+
+      // Kiểm tra quyền phê duyệt
+      const canApprove =
+        currentMember.role === MEMBER_ROLE.OWNER ||
+        currentMember.role === MEMBER_ROLE.ADMIN ||
+        currentMember.permissions?.approveJoinRequests
 
       if (!canApprove) {
-        throw new AppError({
-          message: 'Bạn không có quyền phê duyệt yêu cầu tham gia',
-          status: 403
-        })
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You do not have permission to approve join requests'
+          })
+        )
       }
 
-      // Tìm yêu cầu tham gia
-      const requestIndex = conversation.pendingRequests
-        ? conversation.pendingRequests.findIndex(
-            (req) => req.userId.toString() === targetUserId && req.status === 'PENDING'
-          )
-        : -1
-
-      if (requestIndex === -1 || requestIndex === undefined) {
-        throw new AppError({ message: 'Không tìm thấy yêu cầu tham gia', status: 404 })
+      // Đảm bảo pendingRequests tồn tại
+      if (!conversation.pendingRequests) {
+        conversation.pendingRequests = []
       }
 
-      // Cập nhật trạng thái yêu cầu
-      if (conversation.pendingRequests) {
-        conversation.pendingRequests[requestIndex].status = 'APPROVED'
-      }
+      // Kiểm tra xem người dùng đã là thành viên chưa
+      const isAlreadyMember = conversation.members.some(
+        (member) => member.userId.toString() === userId
+      )
 
-      // Kiểm tra xem người dùng đã có trong members chưa
-      const isAlreadyMember = conversation.members.some((m) => m.userId.toString() === targetUserId)
-
-      if (!isAlreadyMember) {
-        // Thay vì thêm trực tiếp vào conversation, sử dụng findByIdAndUpdate
-        await ChatModel.findByIdAndUpdate(
-          conversationId,
+      if (isAlreadyMember) {
+        // Cập nhật tất cả yêu cầu PENDING của người dùng thành APPROVED
+        await ChatModel.updateMany(
           {
-            $addToSet: { participants: targetUserId },
-            $push: {
-              members: {
-                userId: targetUserId,
-                role: MEMBER_ROLE.MEMBER,
-                permissions: {
-                  inviteUsers: true
-                },
-                joinedAt: new Date(),
-                isMuted: false,
-                mutedUntil: null
+            _id: conversationId,
+            pendingRequests: {
+              $elemMatch: {
+                userId: new mongoose.Types.ObjectId(userId),
+                status: JOIN_REQUEST_STATUS.PENDING
               }
             }
+          },
+          {
+            $set: {
+              'pendingRequests.$[elem].status': JOIN_REQUEST_STATUS.APPROVED,
+              'pendingRequests.$[elem].processedAt': new Date(),
+              'pendingRequests.$[elem].processedBy': currentUserId
+            }
+          },
+          {
+            arrayFilters: [
+              {
+                'elem.userId': new mongoose.Types.ObjectId(userId),
+                'elem.status': JOIN_REQUEST_STATUS.PENDING
+              }
+            ]
           }
         )
 
-        // Lấy thông tin người dùng
-        const user = await UserModel.findById(targetUserId).select('name avatar')
+        // Lấy lại conversation sau khi cập nhật
+        const updatedConversation = await ChatModel.findById(conversationId)
+          .populate('pendingRequests.userId', 'name avatar username')
+          .populate('pendingRequests.invitedBy', 'name avatar username')
+          .populate('pendingRequests.processedBy', 'name avatar username')
 
-        // Tạo tin nhắn hệ thống - CHỈ TẠO KHI THỰC SỰ THÊM THÀNH VIÊN MỚI
-        const systemMessage = await MessageModel.create({
-          chatId: conversation._id,
-          senderId: currentUserId,
-          content: `${user?.name} đã được chấp nhận tham gia nhóm`,
-          type: MESSAGE_TYPE.SYSTEM,
-          status: MESSAGE_STATUS.DELIVERED
-        })
-
-        // Cập nhật lastMessage
-        await ChatModel.findByIdAndUpdate(conversationId, {
-          lastMessage: systemMessage._id
-        })
-
-        // Thông báo cho người dùng đã được chấp nhận
-        emitSocketEvent(targetUserId.toString(), SOCKET_EVENTS.JOIN_REQUEST_APPROVED, {
-          conversationId: conversation._id,
-          message: systemMessage
-        })
-      } else {
-        // Nếu đã là thành viên, chỉ cập nhật trạng thái yêu cầu
-        await conversation.save()
+        res.json(
+          new AppSuccess({
+            message: 'User is already a member of this conversation',
+            data: {
+              conversation: updatedConversation,
+              alreadyMember: true
+            }
+          })
+        )
+        return
       }
 
-      res.json(
-        new AppSuccess({
-          message: 'Yêu cầu tham gia đã được chấp nhận',
-          data: { conversationId: conversation._id, userId: targetUserId }
-        })
+      // Cập nhật tất cả yêu cầu PENDING của người dùng thành APPROVED
+      await ChatModel.updateMany(
+        {
+          _id: conversationId,
+          pendingRequests: {
+            $elemMatch: {
+              userId: new mongoose.Types.ObjectId(userId),
+              status: JOIN_REQUEST_STATUS.PENDING
+            }
+          }
+        },
+        {
+          $set: {
+            'pendingRequests.$[elem].status': JOIN_REQUEST_STATUS.APPROVED,
+            'pendingRequests.$[elem].processedAt': new Date(),
+            'pendingRequests.$[elem].processedBy': currentUserId
+          }
+        },
+        {
+          arrayFilters: [
+            {
+              'elem.userId': new mongoose.Types.ObjectId(userId),
+              'elem.status': JOIN_REQUEST_STATUS.PENDING
+            }
+          ]
+        }
       )
-    } catch (error) {
-      console.error('Error in approveJoinRequest:', error)
-      next(error)
-    }
-  }
 
-  async rejectJoinRequest(req: Request, res: Response, next: NextFunction) {
-    try {
-      const currentUserId = req.context?.user?._id
-      const { conversationId, userId: targetUserId } = req.params
+      // Thêm người dùng vào nhóm
+      await ChatModel.updateOne(
+        { _id: conversationId },
+        {
+          $push: {
+            members: {
+              userId: new mongoose.Types.ObjectId(userId),
+              role: MEMBER_ROLE.MEMBER,
+              permissions: {
+                inviteUsers: true
+              },
+              joinedAt: new Date(),
+              isMuted: false,
+              mutedUntil: null
+            }
+          },
+          $addToSet: {
+            participants: new mongoose.Types.ObjectId(userId)
+          }
+        }
+      )
 
-      // Kiểm tra quyền
-      const conversation = await ChatModel.findById(conversationId)
+      // Lấy lại conversation sau khi cập nhật
+      const updatedConversation = await ChatModel.findById(conversationId)
+        .populate('pendingRequests.userId', 'name avatar username')
+        .populate('pendingRequests.invitedBy', 'name avatar username')
+        .populate('pendingRequests.processedBy', 'name avatar username')
 
-      if (!conversation) {
-        throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
+      if (!updatedConversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found after update'
+          })
+        )
       }
 
-      // Kiểm tra xem người dùng có quyền từ chối yêu cầu tham gia không
-      const member = conversation.members.find((m) => m.userId.toString() === String(currentUserId))
-      const isOwnerOrAdmin =
-        member?.role === MEMBER_ROLE.OWNER || member?.role === MEMBER_ROLE.ADMIN
-      const canApprove = isOwnerOrAdmin || member?.permissions?.approveJoinRequests
+      // Tạo tin nhắn hệ thống - sử dụng Promise.all để tối ưu
+      const [user, approver] = await Promise.all([
+        UserModel.findById(userId).select('name'),
+        UserModel.findById(currentUserId).select('name')
+      ])
 
-      if (!canApprove) {
-        throw new AppError({
-          message: 'Bạn không có quyền từ chối yêu cầu tham gia',
-          status: 403
-        })
-      }
+      const systemMessage = await MessageModel.create({
+        chatId: conversationId,
+        senderId: currentUserId,
+        content: `${user?.name || 'Người dùng'} đã được ${approver?.name || 'Quản trị viên'} chấp nhận vào nhóm`,
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      })
 
-      // Tìm yêu cầu tham gia
-      const requestIndex = conversation.pendingRequests
-        ? conversation.pendingRequests.findIndex(
-            (req) => req.userId.toString() === targetUserId && req.status === 'PENDING'
-          )
-        : -1
+      // Cập nhật lastMessage
+      await ChatModel.updateOne({ _id: conversationId }, { lastMessage: systemMessage._id })
 
-      if (requestIndex === -1 || requestIndex === undefined) {
-        throw new AppError({ message: 'Không tìm thấy yêu cầu tham gia', status: 404 })
-      }
+      // Lấy thông tin đầy đủ của tin nhắn để gửi qua socket
+      const messageToSend = await MessageModel.findById(systemMessage._id).lean().exec()
 
-      // Cập nhật trạng thái yêu cầu
-      if (conversation.pendingRequests) {
-        conversation.pendingRequests[requestIndex].status = 'REJECTED'
-      }
-
-      await conversation.save()
-
-      // Thông báo cho người dùng đã bị từ chối
-      emitSocketEvent(targetUserId.toString(), SOCKET_EVENTS.JOIN_REQUEST_REJECTED, {
-        conversationId: conversation._id,
-        message: 'Yêu cầu tham gia nhóm đã bị từ chối'
+      // Thông báo cho tất cả thành viên
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.JOIN_REQUEST_APPROVED, {
+        conversationId,
+        userId,
+        approvedBy: currentUserId,
+        message: messageToSend || systemMessage.toObject()
       })
 
       res.json(
         new AppSuccess({
-          message: 'Yêu cầu tham gia đã bị từ chối',
-          data: { conversationId: conversation._id, userId: targetUserId }
+          message: 'Join request approved successfully',
+          data: {
+            conversation: updatedConversation,
+            message: systemMessage
+          }
         })
       )
     } catch (error) {
+      console.error('Error approving join request:', error)
+      next(error)
+    }
+  }
+
+  // Từ chối yêu cầu tham gia
+  async rejectJoinRequest(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId, userId } = req.params
+      const currentUserId = req.context?.user?._id
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
+      }
+
+      // Kiểm tra xem người dùng hiện tại có quyền từ chối không
+      const currentMember = conversation.members.find(
+        (member) => member.userId.toString() === currentUserId?.toString()
+      )
+
+      if (!currentMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You are not a member of this conversation'
+          })
+        )
+      }
+
+      // Kiểm tra quyền từ chối
+      const canReject =
+        currentMember.role === MEMBER_ROLE.OWNER ||
+        currentMember.role === MEMBER_ROLE.ADMIN ||
+        currentMember.permissions?.approveJoinRequests
+
+      if (!canReject) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'You do not have permission to reject join requests'
+          })
+        )
+      }
+
+      // Đảm bảo pendingRequests tồn tại
+      if (!conversation.pendingRequests) {
+        conversation.pendingRequests = []
+      }
+
+      // Cập nhật tất cả yêu cầu PENDING của người dùng thành REJECTED
+      await ChatModel.updateMany(
+        { _id: conversationId },
+        {
+          $pull: {
+            pendingRequests: {
+              userId: new mongoose.Types.ObjectId(userId)
+            }
+          }
+        }
+      )
+
+      // Thêm một yêu cầu mới với trạng thái REJECTED
+      await ChatModel.updateOne(
+        { _id: conversationId },
+        {
+          $push: {
+            pendingRequests: {
+              userId: new mongoose.Types.ObjectId(userId),
+              requestedAt: new Date(),
+              status: JOIN_REQUEST_STATUS.REJECTED,
+              processedAt: new Date(),
+              processedBy: currentUserId
+            }
+          }
+        }
+      )
+
+      // Lấy lại conversation sau khi cập nhật
+      const updatedConversation = await ChatModel.findById(conversationId)
+        .populate('pendingRequests.userId', 'name avatar username')
+        .populate('pendingRequests.invitedBy', 'name avatar username')
+        .populate('pendingRequests.processedBy', 'name avatar username')
+
+      // Thông báo cho tất cả thành viên
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.JOIN_REQUEST_REJECTED, {
+        conversationId,
+        userId,
+        rejectedBy: currentUserId
+      })
+
+      res.json(
+        new AppSuccess({
+          message: 'Join request rejected successfully',
+          data: {
+            conversation: updatedConversation
+          }
+        })
+      )
+    } catch (error) {
+      console.error('Error rejecting join request:', error)
       next(error)
     }
   }
@@ -2020,12 +2228,17 @@ class ConversationsController {
 
       await conversation.save()
 
+      // Lấy thông tin người dùng bị xóa và người xóa
+      const [removedUser, currentUser] = await Promise.all([
+        UserModel.findById(memberIdToRemove).select('name'),
+        UserModel.findById(currentUserId).select('name')
+      ])
+
       // Tạo tin nhắn hệ thống thông báo thành viên bị xóa
-      const removedUser = await UserModel.findById(memberIdToRemove).select('name')
       const systemMessage = await MessageModel.create({
         chatId: conversation._id,
         senderId: currentUserId,
-        content: `${removedUser?.name || 'Thành viên'} đã bị xóa khỏi nhóm`,
+        content: `${currentUser?.name || 'Quản trị viên'} đã xóa ${removedUser?.name || 'Thành viên'} khỏi nhóm`,
         type: MESSAGE_TYPE.SYSTEM,
         status: MESSAGE_STATUS.DELIVERED
       })
@@ -2746,7 +2959,7 @@ class ConversationsController {
       // Tạo tin nhắn hệ thống thông báo thay đổi
       const user = await UserModel.findById(userId).select('name')
       let systemMessageContent = `${user?.name || 'Người dùng'} đã cập nhật thông tin nhóm`
-      
+
       // Thêm chi tiết về những thay đổi cụ thể
       const changes = []
       if (name && name !== oldName) {
@@ -2756,17 +2969,23 @@ class ConversationsController {
         changes.push('ảnh đại diện nhóm')
       }
       if (groupType && groupType !== oldGroupType) {
-        changes.push(`loại nhóm thành ${groupType === GROUP_TYPE.PRIVATE ? 'riêng tư' : 'công khai'}`)
+        changes.push(
+          `loại nhóm thành ${groupType === GROUP_TYPE.PRIVATE ? 'riêng tư' : 'công khai'}`
+        )
       }
-      if (requireApproval !== undefined && requireApproval !== oldRequireApproval && groupType !== GROUP_TYPE.PRIVATE) {
+      if (
+        requireApproval !== undefined &&
+        requireApproval !== oldRequireApproval &&
+        groupType !== GROUP_TYPE.PRIVATE
+      ) {
         changes.push(`${requireApproval ? 'bật' : 'tắt'} yêu cầu phê duyệt khi tham gia`)
       }
-      
+
       // Nếu có thay đổi cụ thể, thêm vào nội dung tin nhắn
       if (changes.length > 0) {
         systemMessageContent = `${user?.name || 'Người dùng'} đã thay đổi ${changes.join(', ')}`
       }
-      
+
       // Tạo tin nhắn hệ thống
       const systemMessage = await MessageModel.create({
         chatId: conversation._id,
@@ -2775,7 +2994,7 @@ class ConversationsController {
         type: MESSAGE_TYPE.SYSTEM,
         status: MESSAGE_STATUS.DELIVERED
       })
-      
+
       // Cập nhật lastMessage cho cuộc trò chuyện
       conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
       await conversation.save()
@@ -3182,6 +3401,304 @@ class ConversationsController {
       )
     } catch (error) {
       console.error('Error checking mute status:', error)
+      next(error)
+    }
+  }
+
+  // Thêm phương thức xóa tất cả yêu cầu tham gia theo trạng thái
+  async deleteAllJoinRequests(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId } = req.params
+      const requestStatus = req.query.status as string
+      const userId = req.context?.user?._id
+
+      console.log('Deleting all join requests:', { conversationId, requestStatus, userId })
+
+      // Kiểm tra xem requestStatus có hợp lệ không
+      if (!requestStatus || !['PENDING', 'APPROVED', 'REJECTED'].includes(requestStatus)) {
+        return next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Trạng thái không hợp lệ'
+          })
+        )
+      }
+
+      // Kiểm tra xem cuộc trò chuyện có tồn tại không
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Không tìm thấy cuộc trò chuyện'
+          })
+        )
+      }
+
+      // Kiểm tra xem người dùng có quyền xóa không (phải là admin hoặc chủ nhóm)
+      const member = conversation.members.find(
+        (member) => member.userId.toString() === userId?.toString()
+      )
+
+      if (!member) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không phải là thành viên của nhóm này'
+          })
+        )
+      }
+
+      const isAdmin = member.role === MEMBER_ROLE.ADMIN
+      const isOwner = member.role === MEMBER_ROLE.OWNER
+      const canManageRequests = isOwner || (isAdmin && member.permissions?.approveJoinRequests)
+
+      if (!canManageRequests) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không có quyền thực hiện hành động này'
+          })
+        )
+      }
+
+      // Lọc các yêu cầu tham gia theo trạng thái
+      if (!conversation.pendingRequests) {
+        conversation.pendingRequests = []
+      }
+
+      // Đếm số lượng yêu cầu trước khi xóa
+      const requestsToDelete = conversation.pendingRequests.filter(
+        (req) => req.status === requestStatus
+      ).length
+
+      // Xóa tất cả yêu cầu tham gia theo trạng thái
+      conversation.pendingRequests = conversation.pendingRequests.filter(
+        (req) => req.status !== requestStatus
+      )
+
+      await conversation.save()
+
+      res.json(
+        new AppSuccess({
+          message: `Đã xóa ${requestsToDelete} yêu cầu tham gia có trạng thái ${requestStatus}`,
+          data: {
+            conversationId,
+            status: requestStatus,
+            deletedCount: requestsToDelete
+          }
+        })
+      )
+    } catch (error) {
+      console.error('Error deleting join requests:', error)
+      next(error)
+    }
+  }
+
+  // Thêm phương thức mới sau phương thức transferOwnership và trước khi kết thúc class
+
+  // Cập nhật cài đặt "Chỉ owner và admin được gửi tin nhắn"
+  async updateSendMessageRestriction(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { conversationId } = req.params
+      const { onlyAdminsCanSend, duration } = req.body
+      const userId = req.context?.user?._id
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findById(conversationId)
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Không tìm thấy cuộc trò chuyện'
+          })
+        )
+      }
+
+      // Kiểm tra quyền
+      const member = conversation.members.find((m) => m.userId.toString() === userId?.toString())
+      if (!member) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không phải là thành viên của nhóm này'
+          })
+        )
+      }
+
+      const isOwner = member.role === MEMBER_ROLE.OWNER
+      const isAdmin = member.role === MEMBER_ROLE.ADMIN
+      const canChangeGroupInfo = isOwner || (isAdmin && member.permissions?.changeGroupInfo)
+
+      if (!canChangeGroupInfo) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không có quyền thay đổi cài đặt nhóm'
+          })
+        )
+      }
+
+      // Tính thời gian hết hạn nếu có
+      let restrictUntil = null
+      if (duration && duration > 0) {
+        restrictUntil = new Date()
+        restrictUntil.setMinutes(restrictUntil.getMinutes() + duration)
+      }
+
+      // Cập nhật cài đặt
+      conversation.onlyAdminsCanSend = onlyAdminsCanSend
+      conversation.restrictUntil = restrictUntil
+      await conversation.save()
+
+      // Tạo tin nhắn hệ thống
+      const user = await UserModel.findById(userId).select('name')
+      let systemMessage
+
+      if (onlyAdminsCanSend) {
+        const durationText = restrictUntil ? `trong ${duration} phút` : 'cho đến khi có thay đổi'
+
+        systemMessage = await MessageModel.create({
+          chatId: conversation._id,
+          senderId: userId,
+          content: `${user?.name || 'Quản trị viên'} đã bật chế độ "Chỉ quản trị viên được gửi tin nhắn" ${durationText}`,
+          type: MESSAGE_TYPE.SYSTEM,
+          status: MESSAGE_STATUS.DELIVERED
+        })
+      } else {
+        systemMessage = await MessageModel.create({
+          chatId: conversation._id,
+          senderId: userId,
+          content: `${user?.name || 'Quản trị viên'} đã tắt chế độ "Chỉ quản trị viên được gửi tin nhắn"`,
+          type: MESSAGE_TYPE.SYSTEM,
+          status: MESSAGE_STATUS.DELIVERED
+        })
+      }
+
+      // Cập nhật lastMessage
+      conversation.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+      await conversation.save()
+
+      // Thông báo cho tất cả thành viên
+      emitSocketEvent(conversationId, SOCKET_EVENTS.GROUP_SETTINGS_UPDATED, {
+        conversationId,
+        onlyAdminsCanSend,
+        restrictUntil,
+        updatedBy: userId,
+        message: systemMessage
+      })
+
+      res.json(
+        new AppSuccess({
+          message: 'Đã cập nhật cài đặt nhóm thành công',
+          data: {
+            conversationId,
+            onlyAdminsCanSend,
+            restrictUntil
+          }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  // Kiểm tra quyền gửi tin nhắn
+  async checkSendMessagePermission(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { chatId } = req.params
+      const userId = req.context?.user?._id
+
+      // Tìm cuộc trò chuyện
+      const chat = await ChatModel.findById(chatId)
+      if (!chat) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Không tìm thấy cuộc trò chuyện'
+          })
+        )
+      }
+
+      // Kiểm tra người dùng có trong cuộc trò chuyện không
+      const isMember = chat.participants.some((p) => p.toString() === userId?.toString())
+      if (!isMember) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
+          })
+        )
+      }
+
+      // Tìm thông tin thành viên
+      const member = chat.members.find((m) => m.userId.toString() === userId?.toString())
+      if (!member) {
+        return next(
+          new AppError({
+            status: status.FORBIDDEN,
+            message: 'Không tìm thấy thông tin thành viên'
+          })
+        )
+      }
+
+      // Kiểm tra chế độ "Chỉ owner và admin được gửi tin nhắn"
+      let restrictedByGroupSettings = false
+      let restrictUntil = null
+
+      if (chat.onlyAdminsCanSend) {
+        const isOwnerOrAdmin =
+          member.role === MEMBER_ROLE.OWNER || member.role === MEMBER_ROLE.ADMIN
+
+        // Nếu không phải owner hoặc admin
+        if (!isOwnerOrAdmin) {
+          // Kiểm tra thời hạn giới hạn
+          if (!chat.restrictUntil || new Date() < new Date(chat.restrictUntil)) {
+            restrictedByGroupSettings = true
+            restrictUntil = chat.restrictUntil
+          } else {
+            // Đã hết thời hạn, tự động tắt chế độ
+            await ChatModel.findByIdAndUpdate(chatId, {
+              onlyAdminsCanSend: false,
+              restrictUntil: null
+            })
+          }
+        }
+      }
+
+      // Kiểm tra nếu người dùng bị cấm chat
+      let isMuted = false
+      let mutedUntil = null
+
+      if (member.isMuted) {
+        // Kiểm tra thời hạn cấm chat
+        if (!member.mutedUntil || new Date() < new Date(member.mutedUntil)) {
+          isMuted = true
+          mutedUntil = member.mutedUntil
+        } else {
+          // Đã hết thời hạn cấm chat, tự động bỏ cấm
+          await ChatModel.updateOne(
+            { _id: chatId, 'members.userId': userId },
+            { $set: { 'members.$.isMuted': false, 'members.$.mutedUntil': null } }
+          )
+        }
+      }
+
+      // Trả về kết quả
+      res.json(
+        new AppSuccess({
+          message: 'Kiểm tra quyền gửi tin nhắn thành công',
+          data: {
+            canSendMessages: !isMuted && !restrictedByGroupSettings,
+            isMuted,
+            mutedUntil,
+            restrictedByGroupSettings,
+            restrictUntil,
+            conversationId: chatId
+          }
+        })
+      )
+    } catch (error) {
       next(error)
     }
   }

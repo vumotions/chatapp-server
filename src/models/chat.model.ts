@@ -33,9 +33,13 @@ export interface IChat extends Document {
   pendingRequests?: Array<{
     userId: Schema.Types.ObjectId
     requestedAt: Date
+    processedAt: Date
     status: string
   }>
   formerMembers?: IFormerMember[]
+  // Thêm các trường mới cho chức năng "Chỉ owner và admin được gửi tin nhắn"
+  onlyAdminsCanSend: boolean
+  restrictUntil: Date | null
 }
 
 const memberPermissionsSchema = new Schema(
@@ -105,6 +109,10 @@ const joinRequestSchema = new Schema(
     invitedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User'
+    },
+    // Thêm trường processedAt và processedBy
+    processedAt: {
+      type: Date
     }
   },
   { _id: false }
@@ -177,11 +185,20 @@ const chatSchema = new Schema<IChat>(
     ],
     members: [chatMemberSchema],
     pendingRequests: [joinRequestSchema],
-    formerMembers: [formerMemberSchema]
+    formerMembers: [formerMemberSchema],
+    // Thêm các trường mới cho chức năng "Chỉ owner và admin được gửi tin nhắn"
+    onlyAdminsCanSend: {
+      type: Boolean,
+      default: false
+    },
+    restrictUntil: {
+      type: Date,
+      default: null
+    }
   },
-  { 
-    timestamps: true, 
-    strictQuery: false 
+  {
+    timestamps: true,
+    strictQuery: false
   }
 )
 

@@ -227,11 +227,19 @@ const initSocket = async (server: HttpServer) => {
         // Join room
         socket.join(finalChatId)
 
+        // Chuẩn bị thông tin người gửi với cấu trúc nhất quán
+        const senderInfo = {
+          _id: userId,
+          name: sender?.name || sender?.username || 'Người dùng',
+          avatar: sender?.avatar || null
+        }
+
         // Gửi tới tất cả user trong room với đầy đủ thông tin người gửi
         io.to(finalChatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
           ...message.toObject(),
-          senderName: sender?.name || sender?.username || 'Người dùng',
-          senderAvatar: sender?.avatar || null
+          senderId: senderInfo, // Gửi senderId là một object chứa đầy đủ thông tin
+          senderName: senderInfo.name, // Giữ lại để tương thích ngược
+          senderAvatar: senderInfo.avatar // Giữ lại để tương thích ngược
         })
 
         // Tạo thông báo cho tất cả người tham gia trừ người gửi
@@ -257,11 +265,7 @@ const initSocket = async (server: HttpServer) => {
           if (recipientSocketId) {
             io.to(recipientSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
               ...notification.toObject(),
-              sender: {
-                _id: userId,
-                name: sender?.name || sender?.username || 'Người dùng',
-                avatar: sender?.avatar || null
-              }
+              sender: senderInfo // Sử dụng cùng cấu trúc dữ liệu cho người gửi
             })
           }
         }

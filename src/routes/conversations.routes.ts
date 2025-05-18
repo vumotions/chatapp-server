@@ -271,4 +271,28 @@ conversationsRoutes.get(
   wrapRequestHandler(conversationsController.checkUserMuteStatus)
 )
 
+// Thêm route để xóa tất cả yêu cầu tham gia
+conversationsRoutes.delete(
+  '/group/:conversationId/join-requests',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.deleteAllJoinRequests)
+)
+
+// Cập nhật cài đặt "Chỉ owner và admin được gửi tin nhắn"
+conversationsRoutes.post(
+  '/group/:conversationId/restrict-sending',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.updateSendMessageRestriction)
+)
+
+// Kiểm tra quyền gửi tin nhắn
+conversationsRoutes.get(
+  '/chat/:chatId/send-permission',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.checkSendMessagePermission)
+)
+
 export default conversationsRoutes

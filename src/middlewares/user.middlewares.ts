@@ -41,7 +41,6 @@ export const updateMyProfileValidator = async (req: Request, res: Response, next
   // Username validation
   if (data.username) {
     const existingUser = (await userService.getUserByUsername(data.username)) as IUser
-    console.log({ currentUserId, existingUser })
     if (existingUser && String(existingUser?._id) !== String(currentUserId)) {
       errors.username = {
         code: ZodIssueCode.custom,

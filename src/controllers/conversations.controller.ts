@@ -315,27 +315,40 @@ class ConversationsController {
       await chat.save()
 
       // Đánh dấu tất cả tin nhắn trong cuộc trò chuyện là đã đọc
-      // Chỉ đánh dấu tin nhắn của người khác gửi, không phải tin nhắn của chính mình
-      const updatedMessages = await MessageModel.updateMany(
+      // Sử dụng updateMany để cập nhật trạng thái
+      await MessageModel.updateMany(
         {
           chatId,
           senderId: { $ne: userId }, // Không phải tin nhắn của người dùng hiện tại
           status: { $ne: MESSAGE_STATUS.SEEN } // Chưa được đánh dấu là đã đọc
         },
-        { $set: { status: MESSAGE_STATUS.SEEN } }
+        {
+          $set: { status: MESSAGE_STATUS.SEEN },
+          $addToSet: { readBy: userId } // Thêm userId vào mảng readBy nếu chưa có
+        }
       )
+
+      // Sau đó, lấy danh sách tin nhắn đã được cập nhật
+      const updatedMessages = await MessageModel.find({
+        chatId,
+        senderId: { $ne: userId },
+        status: MESSAGE_STATUS.SEEN,
+        readBy: userId
+      })
+        .select('_id status readBy')
+        .lean()
 
       // Emit sự kiện MESSAGE_READ để thông báo cho tất cả người dùng trong cuộc trò chuyện
       const io = req.app.get('io')
       if (io) {
         io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
           chatId,
-          messageIds: updatedMessages.map(msg => msg._id.toString()),
+          messageIds: updatedMessages.map((msg) => msg._id.toString()),
           readBy: userId,
-          messages: updatedMessages.map(msg => ({
+          messages: updatedMessages.map((msg) => ({
             _id: msg._id.toString(),
             status: msg.status,
-            readBy: msg.readBy.map(id => id.toString())
+            readBy: Array.isArray(msg.readBy) ? msg.readBy.map((id) => id.toString()) : []
           }))
         })
       }
@@ -1528,18 +1541,16 @@ class ConversationsController {
     }
   }
 
-  async joinGroupByInviteLink(req: Request, res: Response, next: NextFunction) {
+  joinGroupByInviteLink = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.context?.user?._id as Types.ObjectId | string
       const { inviteLink } = req.params
 
-      // Tìm cuộc trò chuyện với link mời
       const conversation = await ChatModel.findOne({ inviteLink })
       if (!conversation) {
         throw new AppError({ message: 'Link mời không hợp lệ hoặc đã hết hạn', status: 404 })
       }
 
-      // Kiểm tra xem người dùng đã là thành viên chưa
       const isAlreadyMember = conversation.members.some(
         (m) => m.userId.toString() === userId.toString()
       )
@@ -1554,12 +1565,10 @@ class ConversationsController {
         return
       }
 
-      // Kiểm tra loại nhóm và yêu cầu phê duyệt
       const isPrivateGroup = conversation.groupType === GROUP_TYPE.PRIVATE
       const requiresApproval = isPrivateGroup || conversation.requireApproval
 
       if (requiresApproval) {
-        // Kiểm tra xem đã có yêu cầu tham gia chưa
         const existingRequest = conversation.pendingRequests?.find(
           (req) => req.userId.toString() === userId.toString() && req.status === 'PENDING'
         )
@@ -1574,7 +1583,6 @@ class ConversationsController {
           return
         }
 
-        // Thêm yêu cầu tham gia mới vào mảng pendingRequests
         const newRequest = {
           userId: new mongoose.Types.ObjectId(userId.toString()),
           requestedAt: new Date(),
@@ -1588,15 +1596,12 @@ class ConversationsController {
         conversation.pendingRequests.push(newRequest as any)
         await conversation.save()
 
-        // Thông báo cho admin và owner về yêu cầu tham gia mới
         const adminsAndOwners = conversation.members.filter(
           (m) => m.role === MEMBER_ROLE.ADMIN || m.role === MEMBER_ROLE.OWNER
         )
 
-        // Tạo thông báo cho mỗi admin và owner
         for (const admin of adminsAndOwners) {
           try {
-            // Kiểm tra xem đã có thông báo tương tự chưa
             const existingNotification = await NotificationModel.findOne({
               userId: admin.userId,
               type: NOTIFICATION_TYPE.JOIN_REQUEST,
@@ -1607,7 +1612,6 @@ class ConversationsController {
             let notification
 
             if (existingNotification) {
-              // Nếu đã có thông báo, cập nhật lại thay vì tạo mới
               existingNotification.read = false
               existingNotification.processed = false
               existingNotification.set(
@@ -1620,13 +1624,11 @@ class ConversationsController {
                 isGroup: true,
                 requestingUser: userId
               }
-              // Cập nhật thời gian tạo để đưa thông báo lên đầu
               existingNotification.set('createdAt', new Date())
 
               await existingNotification.save()
               notification = existingNotification
             } else {
-              // Tạo thông báo mới nếu chưa có
               notification = await NotificationModel.create({
                 userId: admin.userId,
                 type: NOTIFICATION_TYPE.JOIN_REQUEST,
@@ -1644,10 +1646,8 @@ class ConversationsController {
               })
             }
 
-            // Lấy thông tin người gửi để gửi kèm thông báo
             const sender = await UserModel.findById(userId).select('name avatar')
 
-            // Chuẩn bị thông báo để gửi qua socket
             const notificationToSend = {
               ...notification.toObject(),
               senderId: {
@@ -1663,19 +1663,17 @@ class ConversationsController {
               notificationToSend
             )
 
-            // Gửi thêm sự kiện NEW_JOIN_REQUEST để đảm bảo tương thích
             emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.NEW_JOIN_REQUEST, {
               conversationId: conversation._id,
               invitedBy: userId,
               userIds: [userId],
-              notification: notificationToSend // Gửi kèm thông báo đầy đủ
+              notification: notificationToSend
             })
           } catch (error) {
             console.error('Error creating notification:', error)
           }
         }
 
-        // Thông báo cho admin và owner về yêu cầu tham gia mới
         for (const admin of adminsAndOwners) {
           emitSocketEvent(admin.userId.toString(), SOCKET_EVENTS.JOIN_REQUEST_RECEIVED, {
             conversationId: conversation._id,
@@ -1691,9 +1689,9 @@ class ConversationsController {
         )
         return
       } else {
-        // Nhóm công khai không yêu cầu phê duyệt - thêm người dùng vào nhóm ngay lập tức
+        // Public group – join immediately
         conversation.members.push({
-          userId: new Schema.Types.ObjectId(userId.toString()),
+          userId: new Types.ObjectId(userId.toString()) as unknown as Schema.Types.ObjectId,
           role: MEMBER_ROLE.MEMBER,
           permissions: {
             inviteUsers: true
@@ -1703,14 +1701,14 @@ class ConversationsController {
           mutedUntil: null
         })
 
-        // Thêm người dùng vào danh sách participants
         if (!conversation.participants.some((p) => p.toString() === userId.toString())) {
-          conversation.participants.push(new Schema.Types.ObjectId(userId.toString()))
+          conversation.participants.push(
+            new Types.ObjectId(userId.toString()) as unknown as Schema.Types.ObjectId
+          )
         }
 
         await conversation.save()
 
-        // Tạo tin nhắn hệ thống thông báo thành viên mới
         const user = await UserModel.findById(userId).select('name')
         const systemMessage = await MessageModel.create({
           chatId: conversation._id,
@@ -1720,11 +1718,9 @@ class ConversationsController {
           status: MESSAGE_STATUS.DELIVERED
         })
 
-        // Cập nhật lastMessage
-        conversation.lastMessage = systemMessage._id as Schema.Types.ObjectId
+        conversation.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
         await conversation.save()
 
-        // Thông báo cho các thành viên khác
         emitSocketEvent(String(conversation?._id), SOCKET_EVENTS.MEMBER_JOINED, {
           conversationId: conversation._id,
           userId,

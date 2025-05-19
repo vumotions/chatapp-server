@@ -284,9 +284,9 @@ conversationsRoutes.post(
   wrapRequestHandler(conversationsController.updateSendMessageRestriction)
 )
 
-// Kiểm tra quyền gửi tin nhắn
+// Thêm route kiểm tra quyền gửi tin nhắn nếu chưa có
 conversationsRoutes.get(
-  '/chat/:chatId/send-permission',
+  '/:chatId/send-permission',
   accessTokenValidator,
   verifiedUserValidator,
   wrapRequestHandler(conversationsController.checkSendMessagePermission)

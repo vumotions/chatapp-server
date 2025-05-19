@@ -13,6 +13,7 @@ import NotificationModel from '~/models/notification.model'
 import UserModel from '~/models/user.model'
 import jwtService from '~/services/jwt.service'
 import { TokenPayload } from '~/types/payload.type'
+import { checkUserCanSendMessage } from './socket-helpers'
 
 export let io: Server
 // Lưu trữ mapping giữa userId và socketId
@@ -133,7 +134,15 @@ const initSocket = async (server: HttpServer) => {
     // Handle send message
     socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data) => {
       try {
-        const { chatId, content, attachments, type, participants, chatType } = data
+        const { chatId, content, attachments, type, participants, chatType, tempId } = data
+        
+        // Kiểm tra quyền gửi tin nhắn
+        const canSendMessage = await checkUserCanSendMessage(socket, chatId)
+        if (!canSendMessage) {
+          return // Hàm checkUserCanSendMessage đã gửi thông báo lỗi
+        }
+        
+        // Tiếp tục logic gửi tin nhắn hiện tại
         let chat
 
         if (!content && (!attachments || attachments.length === 0)) {
@@ -214,7 +223,8 @@ const initSocket = async (server: HttpServer) => {
             attachments,
             type,
             status: MESSAGE_STATUS.SENT,
-            readBy: [userId]
+            readBy: [userId],
+            tempId // Lưu tempId để client có thể theo dõi
           })
         ])
 

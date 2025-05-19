@@ -3651,14 +3651,14 @@ class ConversationsController {
         )
       }
 
-      // Kiểm tra chế độ "Chỉ owner và admin được gửi tin nhắn"
+      // Kiểm tra vai trò của thành viên
+      const isOwnerOrAdmin = member.role === MEMBER_ROLE.OWNER || member.role === MEMBER_ROLE.ADMIN
+
+      // 1. Kiểm tra chế độ "Chỉ owner và admin được gửi tin nhắn" (cài đặt nhóm)
       let restrictedByGroupSettings = false
       let restrictUntil = null
 
       if (chat.onlyAdminsCanSend) {
-        const isOwnerOrAdmin =
-          member.role === MEMBER_ROLE.OWNER || member.role === MEMBER_ROLE.ADMIN
-
         // Nếu không phải owner hoặc admin
         if (!isOwnerOrAdmin) {
           // Kiểm tra thời hạn giới hạn
@@ -3675,7 +3675,7 @@ class ConversationsController {
         }
       }
 
-      // Kiểm tra nếu người dùng bị cấm chat
+      // 2. Kiểm tra nếu người dùng bị cấm chat (cài đặt cá nhân)
       let isMuted = false
       let mutedUntil = null
 

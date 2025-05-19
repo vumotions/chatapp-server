@@ -104,6 +104,38 @@ const initSocket = async (server: HttpServer) => {
     io.emit(SOCKET_EVENTS.USER_ONLINE, userId)
     console.log(`Broadcast user ${userId} is online`)
 
+    // Xử lý sự kiện JOIN_POST_ROOM - khi người dùng xem một bài viết
+    socket.on('JOIN_POST_ROOM', (postId) => {
+      const roomName = `post:${postId}`
+      socket.join(roomName)
+      console.log(`User ${socket.id} joined post room: ${roomName}`)
+    })
+    
+    // Xử lý sự kiện JOIN_COMMENT_ROOM - khi người dùng xem replies của một comment
+    socket.on('JOIN_COMMENT_ROOM', (commentId) => {
+      if (!commentId) return
+      
+      const roomName = `comment:${commentId}`
+      socket.join(roomName)
+      console.log(`User ${userId} joined room ${roomName}`)
+    })
+    
+    // Xử lý sự kiện LEAVE_POST_ROOM - khi người dùng rời khỏi trang bài viết
+    socket.on('LEAVE_POST_ROOM', (postId) => {
+      const roomName = `post:${postId}`
+      socket.leave(roomName)
+      console.log(`User ${socket.id} left post room: ${roomName}`)
+    })
+    
+    // Xử lý sự kiện LEAVE_COMMENT_ROOM - khi người dùng đóng phần replies
+    socket.on('LEAVE_COMMENT_ROOM', (commentId) => {
+      if (!commentId) return
+      
+      const roomName = `comment:${commentId}`
+      socket.leave(roomName)
+      console.log(`User ${userId} left room ${roomName}`)
+    })
+
     // Xử lý sự kiện CHECK_ONLINE
     socket.on(SOCKET_EVENTS.CHECK_ONLINE, (checkUserId, callback) => {
       try {

@@ -3,6 +3,13 @@ import express from 'express'
 import helmet from 'helmet'
 import http from 'http'
 import path from 'path'
+import dotenv from 'dotenv'
+
+// Đảm bảo dotenv được cấu hình ở đầu file
+const envPath = path.resolve(__dirname, '../.env')
+dotenv.config({ path: envPath })
+
+
 import { env } from './config/env'
 import database from './lib/database'
 import initSocket from './lib/socket'

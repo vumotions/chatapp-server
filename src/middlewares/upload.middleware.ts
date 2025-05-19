@@ -9,14 +9,14 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // Giới hạn kích thước file 10MB
   },
   fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif|mp4|mov|avi/
+    const filetypes = /jpeg|jpg|png|gif|mp4|mov|avi|pdf|doc|docx|xls|xlsx|txt|csv/
     const mimetype = filetypes.test(file.mimetype)
     const extname = filetypes.test(file.originalname.split('.').pop()?.toLowerCase() || '')
 
     if (mimetype && extname) {
       return cb(null, true)
     } else {
-      cb(new Error('Error: File type not supported! Only jpeg, jpg, png, gif, mp4, mov, avi are allowed.'))
+      cb(new Error('Error: File type not supported! Only jpeg, jpg, png, gif, mp4, mov, avi, pdf, doc, docx, xls, xlsx, txt, csv are allowed.'))
     }
   }
 })

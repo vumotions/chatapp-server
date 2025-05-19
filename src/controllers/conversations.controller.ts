@@ -1184,30 +1184,8 @@ class ConversationsController {
   // Thêm phương thức để lấy tin nhắn đã ghim
   async getPinnedMessages(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = req.context?.user?._id as Types.ObjectId | string
-      const chatId = req.params.chatId
-
-      console.log('Getting pinned messages for chat:', chatId)
-
-      // Kiểm tra chatId
-      if (!chatId) {
-        return next(
-          new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Chat ID is required'
-          })
-        )
-      }
-
-      // Kiểm tra tính hợp lệ của chatId
-      if (!mongoose.Types.ObjectId.isValid(chatId)) {
-        return next(
-          new AppError({
-            status: status.BAD_REQUEST,
-            message: 'Invalid chat ID'
-          })
-        )
-      }
+      const { chatId } = req.params
+      const userId = req.context?.user?._id
 
       // Kiểm tra người dùng có trong cuộc trò chuyện không
       const chat = await ChatModel.findOne({
@@ -1224,13 +1202,26 @@ class ConversationsController {
         )
       }
 
-      // Lấy tin nhắn đã ghim và sắp xếp theo thời gian mới nhất
-      const pinnedMessages = await MessageModel.find({
+      // Kiểm tra xem người dùng đã xóa lịch sử chưa
+      const deletedMessagesRecord = chat.deletedMessagesFor?.find(
+        record => record.userId.toString() === userId?.toString()
+      );
+
+      // Tạo query để lấy tin nhắn đã ghim
+      let pinnedMessagesQuery: any = {
         chatId,
         isPinned: true
-      })
+      };
+
+      // Nếu người dùng đã xóa lịch sử, chỉ lấy tin nhắn sau thời điểm xóa
+      if (deletedMessagesRecord) {
+        pinnedMessagesQuery.createdAt = { $gt: deletedMessagesRecord.deletedAt };
+      }
+
+      // Lấy tin nhắn đã ghim và sắp xếp theo thời gian mới nhất
+      const pinnedMessages = await MessageModel.find(pinnedMessagesQuery)
         .populate('senderId', 'name avatar username')
-        .sort({ createdAt: -1 }) // Sắp xếp theo thời gian mới nhất
+        .sort({ createdAt: -1 }); // Sắp xếp theo thời gian mới nhất
 
       res.json(
         new AppSuccess({

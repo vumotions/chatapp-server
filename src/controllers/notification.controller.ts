@@ -1,9 +1,12 @@
 import { NextFunction, Request, Response } from 'express'
+import { NOTIFICATION_TYPE } from '~/constants/enums'
+import SOCKET_EVENTS from '~/constants/socket-events'
+import { emitSocketEvent, users } from '~/lib/socket'
+import NotificationModel from '~/models/notification.model'
 import { AppError } from '~/models/error.model'
 import { AppSuccess } from '~/models/success.model'
 import { IUser } from '~/models/user.model'
 import notificationService from '~/services/notification.service'
-import NotificationModel from '~/models/notification.model'
 
 class NotificationController {
   async getUserNotifications(req: Request, res: Response, next: NextFunction) {
@@ -44,7 +47,22 @@ class NotificationController {
       notification.read = true
       await notification.save()
 
-      return res.json(new AppSuccess({ data: notification, message: 'Đã đánh dấu đã đọc' }))
+      // Populate sender information for the response
+      const populatedNotification = await NotificationModel.findById(notificationId)
+        .populate('senderId', 'name avatar')
+        .lean()
+
+      // Emit socket event for real-time update - sử dụng emitSocketEvent
+      emitSocketEvent(
+        userId.toString(),
+        SOCKET_EVENTS.NOTIFICATION_NEW,
+        {
+          ...populatedNotification,
+          isUpdate: true // Thêm flag để client biết đây là cập nhật
+        }
+      )
+
+      return res.json(new AppSuccess({ data: populatedNotification, message: 'Đã đánh dấu đã đọc' }))
     } catch (error) {
       console.error('Error marking notification as read:', error)
       next(error)
@@ -52,9 +70,30 @@ class NotificationController {
   }
 
   async markAllAsRead(req: Request, res: Response, next: NextFunction) {
-    const userId = (req.context?.user as IUser)._id as string
-    await notificationService.markAllAsRead(userId)
-    res.json(new AppSuccess({ data: null, message: 'Đã đánh dấu tất cả đã đọc' }))
+    try {
+      const userId = (req.context?.user as IUser)._id as string
+      
+      // Update all unread notifications
+      await NotificationModel.updateMany(
+        { userId, read: false },
+        { $set: { read: true } }
+      )
+      
+      // Emit socket event for real-time update - sử dụng emitSocketEvent
+      emitSocketEvent(
+        userId.toString(),
+        SOCKET_EVENTS.NOTIFICATION_NEW,
+        { 
+          allRead: true, 
+          userId,
+          isUpdate: true
+        }
+      )
+      
+      res.json(new AppSuccess({ data: null, message: 'Đã đánh dấu tất cả đã đọc' }))
+    } catch (err) {
+      next(err)
+    }
   }
 
   async deleteNotification(req: Request, res: Response, next: NextFunction) {

@@ -13,6 +13,7 @@ import UserModel from '~/models/user.model'
 import jwtService from '~/services/jwt.service'
 import { TokenPayload } from '~/types/payload.type'
 import { checkUserCanSendMessage } from './socket-helpers'
+import SettingsModel from '~/models/settings.model'
 
 export let io: Server
 // Lưu trữ mapping giữa userId và socketId
@@ -91,6 +92,79 @@ const initSocket = async (server: HttpServer) => {
   io.on('connection', (socket) => {
     const { userId } = socket.handshake.auth.decodedAccessToken as TokenPayload
 
+    // Middleware kiểm tra người dùng bị chặn
+    socket.use(async ([event, data], next) => {
+      // Chỉ kiểm tra cho các sự kiện liên quan đến chat
+      if (event === SOCKET_EVENTS.SEND_MESSAGE || event === SOCKET_EVENTS.TYPING) {
+        try {
+          const chatId = data?.chatId
+
+          if (!chatId) {
+            return next()
+          }
+
+          // Tìm cuộc trò chuyện
+          const chat = await ChatModel.findById(chatId)
+          if (!chat) {
+            return next(new Error('Không tìm thấy cuộc trò chuyện'))
+          }
+
+          // Nếu không phải chat 1-1, không cần kiểm tra chặn
+          if (chat.type !== CHAT_TYPE.PRIVATE) {
+            return next()
+          }
+
+          // Tìm ID người dùng khác trong cuộc trò chuyện
+          const otherUserId = chat.participants.find((p) => p.toString() !== userId)?.toString()
+          if (!otherUserId) {
+            return next()
+          }
+
+          // Kiểm tra xem người dùng có bị chặn không
+          const otherUserSettings = await SettingsModel.findOne({ userId: otherUserId })
+          if (
+            otherUserSettings &&
+            otherUserSettings.security.blockedUsers.some((id) => id.toString() === userId)
+          ) {
+            return next(new Error('USER_BLOCKED'))
+          }
+
+          // Kiểm tra xem người dùng có chặn người khác không
+          const userSettings = await SettingsModel.findOne({ userId })
+          if (
+            userSettings &&
+            userSettings.security.blockedUsers.some((id) => id.toString() === otherUserId)
+          ) {
+            return next(new Error('USER_BLOCKING'))
+          }
+
+          next()
+        } catch (error: any) {
+          console.error('Error in block check middleware:', error)
+          next(error)
+        }
+      } else {
+        // Các sự kiện khác không cần kiểm tra
+        next()
+      }
+    })
+
+    // Xử lý lỗi từ middleware
+    socket.on('error', (err) => {
+      console.error('Socket middleware error:', err)
+      if (err.message === 'USER_BLOCKED') {
+        socket.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Bạn không thể gửi tin nhắn vì đã bị người dùng này chặn',
+          code: 'USER_BLOCKED'
+        })
+      } else if (err.message === 'USER_BLOCKING') {
+        socket.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Bạn không thể gửi tin nhắn vì đã chặn người dùng này',
+          code: 'USER_BLOCKING'
+        })
+      }
+    })
+
     // Lưu mapping userId -> socketId
     users.set(userId, socket.id)
     console.log('Current users:', Array.from(users.entries()))
@@ -110,27 +184,27 @@ const initSocket = async (server: HttpServer) => {
       socket.join(roomName)
       console.log(`User ${socket.id} joined post room: ${roomName}`)
     })
-    
+
     // Xử lý sự kiện JOIN_COMMENT_ROOM - khi người dùng xem replies của một comment
     socket.on('JOIN_COMMENT_ROOM', (commentId) => {
       if (!commentId) return
-      
+
       const roomName = `comment:${commentId}`
       socket.join(roomName)
       console.log(`User ${userId} joined room ${roomName}`)
     })
-    
+
     // Xử lý sự kiện LEAVE_POST_ROOM - khi người dùng rời khỏi trang bài viết
     socket.on('LEAVE_POST_ROOM', (postId) => {
       const roomName = `post:${postId}`
       socket.leave(roomName)
       console.log(`User ${socket.id} left post room: ${roomName}`)
     })
-    
+
     // Xử lý sự kiện LEAVE_COMMENT_ROOM - khi người dùng đóng phần replies
     socket.on('LEAVE_COMMENT_ROOM', (commentId) => {
       if (!commentId) return
-      
+
       const roomName = `comment:${commentId}`
       socket.leave(roomName)
       console.log(`User ${userId} left room ${roomName}`)

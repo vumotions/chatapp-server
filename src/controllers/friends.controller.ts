@@ -7,6 +7,7 @@ import { AppError } from '~/models/error.model'
 import FriendRequestModel from '~/models/friend-request.model'
 import FriendModel from '~/models/friend.model'
 import NotificationModel from '~/models/notification.model'
+import SettingsModel from '~/models/settings.model'
 import { AppSuccess } from '~/models/success.model'
 import UserModel, { IUser } from '~/models/user.model'
 import notificationService from '~/services/notification.service'
@@ -19,6 +20,24 @@ class FriendsController {
 
       if (userId.toString() === receiverId) {
         throw new AppError({ message: 'Không thể kết bạn với chính mình', status: 400 })
+      }
+
+      // Kiểm tra xem người dùng có bị chặn không
+      const senderSettings = await SettingsModel.findOne({ userId })
+      if (senderSettings && senderSettings.security.blockedUsers.some(id => id.toString() === receiverId)) {
+        throw new AppError({ 
+          message: 'Không thể gửi lời mời kết bạn đến người dùng bạn đã chặn', 
+          status: 400 
+        })
+      }
+
+      // Kiểm tra xem mình có bị người nhận chặn không
+      const receiverSettings = await SettingsModel.findOne({ userId: receiverId })
+      if (receiverSettings && receiverSettings.security.blockedUsers.some(id => id.toString() === userId)) {
+        throw new AppError({ 
+          message: 'Không thể gửi lời mời kết bạn đến người dùng này', 
+          status: 400 
+        })
       }
 
       // Kiểm tra đã là bạn chưa

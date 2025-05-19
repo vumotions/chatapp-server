@@ -2,6 +2,7 @@ import { Socket } from 'socket.io'
 import { MEMBER_ROLE } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import ChatModel from '~/models/chat.model'
+import SettingsModel from '~/models/settings.model'
 
 /**
  * Kiểm tra xem người dùng có bị muted trong nhóm không
@@ -100,3 +101,5 @@ export const checkUserCanSendMessage = async (socket: Socket, chatId: string): P
     return false
   }
 }
+
+

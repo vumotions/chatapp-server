@@ -21,6 +21,7 @@ import notificationRoutes from './routes/notifications.routes'
 import postsRoutes from './routes/posts.routes'
 import userRoutes from './routes/user.routes'
 import draftsRoutes from './routes/drafts.routes'
+import uploadRoutes from './routes/upload.routes'
 
 const port = env.PORT
 
@@ -40,6 +41,7 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/friends', friendsRoutes)
 app.use('/api/posts', postsRoutes)
 app.use('/api/chat/drafts', draftsRoutes)
+app.use('/api/upload', uploadRoutes)
 
 app.use(defaultErrorHandler)
 

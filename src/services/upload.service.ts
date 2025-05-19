@@ -1,10 +1,10 @@
-import { v2 as cloudinary, ConfigOptions } from 'cloudinary'
+import { v2 as cloudinary } from 'cloudinary'
 import { env } from '~/config/env'
 
 class UploadService {
-  cloudinaryInstance: ConfigOptions
   constructor() {
-    this.cloudinaryInstance = cloudinary.config({
+    // Cấu hình Cloudinary
+    cloudinary.config({
       cloud_name: env.CLOUDINARY_NAME,
       api_key: env.CLOUDINARY_API_KEY,
       api_secret: env.CLOUDINARY_API_SECRET,
@@ -17,7 +17,7 @@ class UploadService {
 
     // Upload lên Cloudinary
     const result = await new Promise((resolve, reject) => {
-      this.cloudinaryInstance.uploader.upload(
+      cloudinary.uploader.upload(
         fileBase64,
         {
           folder: folder,
@@ -47,8 +47,29 @@ class UploadService {
     try {
       const uploadPromises = files.map(async (file) => {
         try {
-          const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video'
-          const result = await this.uploadToCloudinary(file, 'posts')
+          // Phân loại file dựa trên MIME type
+          let fileType = 'other';
+          
+          if (file.mimetype.startsWith('image/')) {
+            fileType = 'image';
+          } else if (file.mimetype.startsWith('video/')) {
+            fileType = 'video';
+          } else if (file.mimetype.startsWith('audio/')) {
+            fileType = 'audio';
+          } else if (file.mimetype.includes('pdf')) {
+            fileType = 'pdf';
+          } else if (file.mimetype.includes('word') || file.mimetype.includes('document')) {
+            fileType = 'document';
+          } else if (file.mimetype.includes('excel') || file.mimetype.includes('spreadsheet')) {
+            fileType = 'spreadsheet';
+          } else if (file.mimetype.includes('text/')) {
+            fileType = 'text';
+          }
+          
+          // Xác định folder dựa trên loại file
+          const folder = `posts/${fileType}s`;
+          
+          const result = await this.uploadToCloudinary(file, folder);
 
           // Đảm bảo trả về đúng định dạng
           return {

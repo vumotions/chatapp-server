@@ -3793,12 +3793,12 @@ class ConversationsController {
         )
       }
 
-      // Bước 1: Xóa bản ghi cũ nếu có
+      // Xóa bản ghi cũ nếu có
       await ChatModel.findByIdAndUpdate(conversationId, {
         $pull: { deletedMessagesFor: { userId } }
       });
 
-      // Bước 2: Thêm bản ghi mới
+      // Thêm bản ghi mới
       await ChatModel.findByIdAndUpdate(conversationId, {
         $push: {
           deletedMessagesFor: {
@@ -3808,9 +3808,41 @@ class ConversationsController {
         }
       });
 
+      // Tạo tin nhắn hệ thống mới
+      const systemMessage = await MessageModel.create({
+        chatId: conversationId,
+        senderId: userId,
+        content: 'Bạn đã xóa lịch sử tin nhắn',
+        type: MESSAGE_TYPE.SYSTEM,
+        status: MESSAGE_STATUS.DELIVERED
+      });
+
+      // Cập nhật lastMessage thành tin nhắn hệ thống mới
+      await ChatModel.findByIdAndUpdate(conversationId, {
+        lastMessage: systemMessage._id
+      });
+
+      // Lấy thông tin đầy đủ của tin nhắn hệ thống để trả về
+      const populatedSystemMessage = await MessageModel.findById(systemMessage._id)
+        .populate('senderId', 'name avatar')
+        .lean();
+
+      // Sử dụng socket để cập nhật real-time
+      const io = req.app.get('io');
+      if (io) {
+        // Emit sự kiện cập nhật lastMessage
+        emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.LAST_MESSAGE_UPDATED, {
+          conversationId,
+          lastMessage: populatedSystemMessage
+        });
+      }
+
       res.json(
         new AppSuccess({
-          data: { conversationId },
+          data: { 
+            conversationId,
+            systemMessage: populatedSystemMessage
+          },
           message: 'Lịch sử tin nhắn đã được xóa'
         })
       )

@@ -20,14 +20,14 @@ class PostController {
       const userId = req.context?.user?._id
       const { content, postType } = req.body
       const files = req.files as Express.Multer.File[]
-      
+
       if (!userId) {
         return res.status(400).json({ message: 'User ID is required' })
       }
-      
+
       // Upload files và nhận về mảng đối tượng media
       const uploadedFiles = await uploadService.uploadFiles(files)
-      
+
       // Tạo đối tượng dữ liệu với tên trường đúng
       const postData = {
         userId: userId,
@@ -35,24 +35,24 @@ class PostController {
         post_type: postType || 'public',
         media: uploadedFiles
       }
-      
+
       console.log('Creating post with data:', JSON.stringify(postData, null, 2))
-      
+
       // Tạo bài viết mới
       const post = await PostModel.create(postData)
-      
-      return res.status(200).json({ 
+
+      return res.status(200).json({
         message: 'Post created successfully',
         data: post
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating post:', error)
-      
+
       // Log chi tiết lỗi để debug
       if (error.name === 'ValidationError') {
         console.error('Validation error details:', error.errors)
       }
-      
+
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
@@ -61,7 +61,7 @@ class PostController {
     try {
       const { postTypes, page, limit, userId } = req.query
       const currentUserId = req.context?.user?._id
-      
+
       // Convert query params to appropriate types
       const pageNumber = parseInt(page as string) || 1
       const limitNumber = parseInt(limit as string) || 10
@@ -72,7 +72,7 @@ class PostController {
       if (userId) {
         query.userId = userId // Sử dụng userId theo schema
       }
-      
+
       if (postTypes) {
         const types = (postTypes as string).split(',')
         // Only allow private posts if currentUserId matches userId
@@ -100,12 +100,12 @@ class PostController {
           try {
             // Đếm số lượt thích
             const likesCount = await PostLikeModel.countDocuments({ postId: post._id })
-            
+
             // Kiểm tra người dùng hiện tại đã thích bài viết chưa
-            const userLiked = currentUserId 
+            const userLiked = currentUserId
               ? await PostLikeModel.exists({ postId: post._id, userId: currentUserId })
               : false
-            
+
             // Đếm số bình luận - Sửa lỗi ở đây
             const commentsCount = await PostCommentModel.countDocuments({ postId: post._id })
 
@@ -126,7 +126,7 @@ class PostController {
               userLiked: !!userLiked,
               shared_post_data: sharedPostData
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error processing post:', post._id, error)
             return post
           }
@@ -143,122 +143,84 @@ class PostController {
           totalPages: Math.ceil(total / limitNumber)
         }
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in getPost:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 
-  async getPostComments(req: Request, res: Response): Promise<any> {
+  async getComments(req: Request, res: Response): Promise<any> {
     try {
-      const { postId, parentId, page, limit } = req.query
+      const { postId, parentId, page = 1, limit = 10 } = req.query;
+      const userId = req.context?.user?._id;
       
-      // Log để debug
-      console.log('getPostComments called with:', { postId, parentId, page, limit });
+      console.log(`Getting comments for post ${postId}, parentId ${parentId}, user ${userId}`);
       
-      if (!postId) {
-        return res.status(400).json({ message: 'Post ID is required' })
-      }
-      
-      // Convert query params to appropriate types
-      const pageNumber = parseInt(page as string) || 1
-      const limitNumber = parseInt(limit as string) || 10
-      const skip = (pageNumber - 1) * limitNumber
-      
-      // Build query object
-      const query: any = {}
-
-      // Chuyển đổi postId thành ObjectId
-      const postIdObj = mongoose.Types.ObjectId.isValid(postId as string) 
-        ? new mongoose.Types.ObjectId(postId as string)
-        : null;
-      
-      if (!mongoose.Types.ObjectId.isValid(postId as string)) {
-        console.log('Invalid postId format:', postId);
-        return res.status(200).json({
-          message: 'Get comments successfully',
-          data: [],
-          pagination: {
-            page: pageNumber,
-            limit: limitNumber,
-            total: 0,
-            totalPages: 0
-          }
-        });
-      }
-      
-      query.postId = postId;
-      
+      // Tạo query để lấy comments
+      const query: any = { postId };
       if (parentId) {
-        // Kiểm tra xem parentId có phải ObjectId hợp lệ không
-        if (!mongoose.Types.ObjectId.isValid(parentId as string)) {
-          console.log('Invalid parentId format:', parentId);
-          return res.status(200).json({
-            message: 'Get comments successfully',
-            data: [],
-            pagination: {
-              page: pageNumber,
-              limit: limitNumber,
-              total: 0,
-              totalPages: 0
-            }
-          });
-        }
         query.parentId = parentId;
       } else {
-        // Thay đổi cách truy vấn top-level comments
-        // Thử cả hai cách: không tồn tại hoặc là null
-        query.$or = [
-          { parentId: { $exists: false } },
-          { parentId: null }
-        ];
+        query.parentId = { $exists: false }; // Chỉ lấy comments gốc nếu không có parentId
       }
       
-      console.log('Query:', query);
-      
-      // Kiểm tra trực tiếp trong database
-      const allComments = await PostCommentModel.find({ postId: postId as string });
-      console.log(`All comments for this post (without filters): ${allComments.length}`);
-      if (allComments.length > 0) {
-        console.log('Sample comment:', allComments[0]);
-      }
-      
-      // Get comments with pagination
+      // Lấy comments với phân trang
+      const skip = (Number(page) - 1) * Number(limit);
       const comments = await PostCommentModel.find(query)
+        .populate('userId', 'name avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limitNumber)
-        .populate('userId', 'name avatar')
+        .limit(Number(limit));
       
-      console.log(`Found ${comments.length} comments matching query`);
+      // Đếm tổng số comments
+      const total = await PostCommentModel.countDocuments(query);
       
-      // Get total count for pagination
-      const total = await PostCommentModel.countDocuments(query)
-      
-      // For each top-level comment, get the count of replies
-      const commentsWithReplyCounts = await Promise.all(
+      // Thêm thông tin like cho mỗi comment
+      const commentsWithLikeInfo = await Promise.all(
         comments.map(async (comment) => {
-          const replyCount = await PostCommentModel.countDocuments({ parentId: comment._id })
+          // Đếm số lượng like
+          const likesCount = await CommentLikeModel.countDocuments({ commentId: comment._id });
+          
+          // Kiểm tra xem người dùng hiện tại đã like comment này chưa
+          let userLiked = false;
+          if (userId) {
+            const userLike = await CommentLikeModel.findOne({ 
+              commentId: comment._id, 
+              userId 
+            });
+            userLiked = !!userLike;
+          }
+          
+          console.log(`Comment ${comment._id} - userLiked:`, userLiked, 'likesCount:', likesCount);
+          
+          // Đếm số lượng replies nếu là comment gốc
+          let replyCount = 0;
+          if (!comment.parentId) {
+            replyCount = await PostCommentModel.countDocuments({ parentId: comment._id });
+          }
+          
           return {
             ...comment.toObject(),
+            likesCount,
+            userLiked,
             replyCount
-          }
+          };
         })
-      )
+      );
       
       return res.status(200).json({
         message: 'Get comments successfully',
-        data: commentsWithReplyCounts,
+        data: commentsWithLikeInfo,
         pagination: {
-          page: pageNumber,
-          limit: limitNumber,
+          page: Number(page),
+          limit: Number(limit),
           total,
-          totalPages: Math.ceil(total / limitNumber)
+          totalPages: Math.ceil(total / Number(limit))
         }
-      })
-    } catch (error) {
-      console.error('Error in getPostComments:', error);
-      return res.status(500).json({ message: error })
+      });
+    } catch (error: any) {
+      console.error('Error getting comments:', error);
+      return res.status(500).json({ message: error.message || 'Internal server error' });
     }
   }
 
@@ -266,78 +228,80 @@ class PostController {
     try {
       const { postId, content, parentId, tempId } = req.body
       const userId = req.context?.user?._id
-      
+
       // Validate input
       if (!postId || !content) {
         return res.status(400).json({ message: 'Post ID and content are required' })
       }
-      
+
       // Kiểm tra xem postId có phải ObjectId hợp lệ không
       if (!mongoose.Types.ObjectId.isValid(postId)) {
-        console.log('Invalid postId format:', postId);
+        console.log('Invalid postId format:', postId)
         return res.status(400).json({ message: 'Invalid Post ID format' })
       }
-      
+
       // Tạo đối tượng comment
       const commentData: any = {
         userId,
         postId,
         content
       }
-      
+
       // Chỉ thêm parentId nếu có giá trị
       if (parentId) {
         commentData.parentId = parentId
       }
-      
-      console.log('Creating comment with data:', commentData);
-      
+
+      console.log('Creating comment with data:', commentData)
+
       // Create the comment
       const comment = await PostCommentModel.create(commentData)
-      
-      console.log('Comment created successfully:', comment);
-      
+
+      console.log('Comment created successfully:', comment)
+
       // Populate user data for the response
-      const populatedComment = await PostCommentModel.findById(comment._id)
-        .populate('userId', 'name avatar')
-      
+      const populatedComment = await PostCommentModel.findById(comment._id).populate(
+        'userId',
+        'name avatar'
+      )
+
       // Update comment count on the post
       await PostModel.findByIdAndUpdate(postId, { $inc: { comment_count: 1 } })
-      
+
       // Emit socket event for real-time comments
       const { io } = require('~/lib/socket')
       if (io) {
         // Tạo room name từ postId
         const roomName = `post:${postId}`
-        
+
         // Emit sự kiện NEW_COMMENT đến tất cả người dùng đang xem bài viết
         // Thêm userId vào dữ liệu để client có thể lọc
         io.to(roomName).emit('NEW_COMMENT', {
           comment: populatedComment,
           isReply: !!parentId,
-          creatorId: userId.toString() // Thêm creatorId để client có thể lọc
+          creatorId: userId?.toString() // Thêm creatorId để client có thể lọc
         })
-        
+
         console.log(`Emitted NEW_COMMENT event to room ${roomName}`)
-        
+
         // Nếu là reply, emit thêm sự kiện NEW_REPLY cho comment cha
         if (parentId) {
           const replyRoomName = `comment:${parentId}`
           io.to(replyRoomName).emit('NEW_REPLY', {
             comment: populatedComment,
             parentId,
-            creatorId: userId.toString() // Thêm creatorId để client có thể lọc
+            creatorId: userId?.toString() // Thêm creatorId để client có thể lọc
           })
           console.log(`Emitted NEW_REPLY event to room ${replyRoomName}`)
         }
       }
-      
+
       return res.status(201).json({
         message: 'Comment created successfully',
         data: populatedComment
       })
-    } catch (error) {
-      console.error('Error in createComment:', error);
+    } catch (error: any) {
+      console.error('Error in createComment:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
@@ -346,6 +310,10 @@ class PostController {
     try {
       const userId = req.context?.user?._id
       const { postId } = req.body
+
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required' })
+      }
 
       if (!postId) {
         return res.status(400).json({ message: 'Post ID is required' })
@@ -359,51 +327,104 @@ class PostController {
 
       // Check if user already liked the post
       const existingLike = await PostLikeModel.findOne({ userId, postId })
+
+      // Toggle like status
       if (existingLike) {
-        return res.status(400).json({ message: 'You already liked this post' })
-      }
+        // User already liked the post, so unlike it
+        await PostLikeModel.findByIdAndDelete(existingLike._id)
 
-      // Create the like
-      await PostLikeModel.create({ userId, postId })
+        // Get updated like count
+        const likesCount = await PostLikeModel.countDocuments({ postId })
 
-      // Get updated like count
-      const likesCount = await PostLikeModel.countDocuments({ postId })
-
-      // Emit socket event for real-time likes
-      const { io } = require('~/lib/socket')
-      if (io) {
-        // Emit sự kiện POST_LIKE_UPDATED cho post room
-        const roomName = `post:${postId}`
-        io.to(roomName).emit('POST_LIKE_UPDATED', {
-          postId,
-          likesCount
-        })
-        console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
-      }
-
-      // Create notification for post author if not self-liking
-      if (post.user_id.toString() !== userId.toString()) {
-        const notification = await NotificationModel.create({
-          userId: post.user_id,
-          senderId: userId,
-          type: 'POST_LIKE',
-          relatedId: postId
-        })
-
-        // Emit notification to post author if online
-        const { io, users } = require('~/lib/socket')
-        const recipientSocketId = users.get(post.user_id.toString())
-        if (recipientSocketId && io) {
-          io.to(recipientSocketId).emit('NOTIFICATION_NEW', notification)
+        // Emit socket event for real-time likes
+        try {
+          const io = req.app.get('io')
+          if (io) {
+            const roomName = `post:${postId}`
+            io.to(roomName).emit('POST_LIKE_UPDATED', {
+              postId,
+              likesCount
+            })
+            console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
+          }
+        } catch (socketError) {
+          console.error('Socket error in likePost (unlike):', socketError)
         }
-      }
 
-      return res.status(200).json({
-        message: 'Post liked successfully',
-        data: { likesCount, userLiked: true }
-      })
-    } catch (error) {
-      return res.status(500).json({ message: error })
+        // Delete any related notifications
+        try {
+          if (post.userId?.toString() !== userId?.toString()) {
+            await NotificationModel.deleteMany({
+              userId: post.userId,
+              senderId: userId,
+              type: 'POST_LIKE',
+              relatedId: postId
+            })
+          }
+        } catch (notifError) {
+          console.error('Notification deletion error:', notifError)
+        }
+
+        return res.status(200).json({
+          message: 'Post unliked successfully',
+          data: { likesCount, userLiked: false }
+        })
+      } else {
+        // User hasn't liked the post yet, so like it
+        await PostLikeModel.create({ userId, postId })
+
+        // Get updated like count
+        const likesCount = await PostLikeModel.countDocuments({ postId })
+
+        // Emit socket event for real-time likes
+        try {
+          const io = req.app.get('io')
+          if (io) {
+            const roomName = `post:${postId}`
+            io.to(roomName).emit('POST_LIKE_UPDATED', {
+              postId,
+              likesCount
+            })
+            console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
+          }
+        } catch (socketError) {
+          console.error('Socket error in likePost (like):', socketError)
+        }
+
+        // Create notification for post author if not self-liking
+        try {
+          if (post.userId?.toString() !== userId?.toString()) {
+            const notification = await NotificationModel.create({
+              userId: post.userId,
+              senderId: userId,
+              type: 'POST_LIKE',
+              relatedId: postId
+            })
+
+            // Emit notification to post author if online
+            try {
+              const io = req.app.get('io')
+              const { users } = require('~/lib/socket')
+              const recipientSocketId = users.get(post.userId?.toString())
+              if (recipientSocketId && io) {
+                io.to(recipientSocketId).emit('NOTIFICATION_NEW', notification)
+              }
+            } catch (notifSocketError) {
+              console.error('Notification socket error:', notifSocketError)
+            }
+          }
+        } catch (notifError) {
+          console.error('Notification creation error:', notifError)
+        }
+
+        return res.status(200).json({
+          message: 'Post liked successfully',
+          data: { likesCount, userLiked: true }
+        })
+      }
+    } catch (error: any) {
+      console.error('Error in likePost:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 
@@ -432,33 +453,42 @@ class PostController {
       const likesCount = await PostLikeModel.countDocuments({ postId })
 
       // Emit socket event for real-time likes
-      const { io } = require('~/lib/socket')
-      if (io) {
-        // Emit sự kiện POST_LIKE_UPDATED cho post room
-        const roomName = `post:${postId}`
-        io.to(roomName).emit('POST_LIKE_UPDATED', {
-          postId,
-          likesCount
-        })
-        console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
+      try {
+        const io = req.app.get('io')
+        if (io) {
+          // Emit sự kiện POST_LIKE_UPDATED cho post room
+          const roomName = `post:${postId}`
+          io.to(roomName).emit('POST_LIKE_UPDATED', {
+            postId,
+            likesCount
+          })
+          console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
+        }
+      } catch (socketError) {
+        console.error('Socket error in deleteLikePost:', socketError)
       }
 
       // Delete any related notifications
-      if (post.user_id.toString() !== userId.toString()) {
-        await NotificationModel.deleteMany({
-          userId: post.user_id,
-          senderId: userId,
-          type: 'POST_LIKE',
-          relatedId: postId
-        })
+      try {
+        if (post.userId?.toString() !== userId?.toString()) {
+          await NotificationModel.deleteMany({
+            userId: post.userId,
+            senderId: userId,
+            type: 'POST_LIKE',
+            relatedId: postId
+          })
+        }
+      } catch (notifError) {
+        console.error('Notification deletion error:', notifError)
       }
 
       return res.status(200).json({
         message: 'Post unliked successfully',
         data: { likesCount, userLiked: false }
       })
-    } catch (error) {
-      return res.status(500).json({ message: error })
+    } catch (error: any) {
+      console.error('Error in deleteLikePost:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 
@@ -479,33 +509,56 @@ class PostController {
 
       // Check if user already liked the comment
       const existingLike = await CommentLikeModel.findOne({ userId, commentId })
+      
+      // Toggle like status
       if (existingLike) {
-        return res.status(400).json({ message: 'You already liked this comment' })
-      }
-
-      // Create the like
-      await CommentLikeModel.create({ userId, commentId })
-
-      // Get updated like count
-      const likesCount = await CommentLikeModel.countDocuments({ commentId })
-
-      // Emit socket event for real-time likes
-      const { io } = require('~/lib/socket')
-      if (io) {
-        // Emit sự kiện COMMENT_LIKE_UPDATED cho comment room
-        const roomName = `comment:${commentId}`
-        io.to(roomName).emit('COMMENT_LIKE_UPDATED', {
-          commentId,
-          likesCount
+        // User already liked the comment, so unlike it
+        await CommentLikeModel.findByIdAndDelete(existingLike._id)
+        
+        // Get updated like count
+        const likesCount = await CommentLikeModel.countDocuments({ commentId })
+        
+        // Emit socket event for real-time likes
+        const { io } = require('~/lib/socket')
+        if (io) {
+          // Emit sự kiện COMMENT_LIKE_UPDATED cho comment room
+          const roomName = `comment:${commentId}`
+          io.to(roomName).emit('COMMENT_LIKE_UPDATED', {
+            commentId,
+            likesCount
+          })
+          console.log(`Emitted COMMENT_LIKE_UPDATED event to room ${roomName}`)
+        }
+        
+        return res.status(200).json({
+          message: 'Comment unliked successfully',
+          data: { likesCount, userLiked: false }
         })
-        console.log(`Emitted COMMENT_LIKE_UPDATED event to room ${roomName}`)
-      }
+      } else {
+        // Create the like
+        await CommentLikeModel.create({ userId, commentId })
 
-      return res.status(200).json({
-        message: 'Comment liked successfully',
-        data: { likesCount, userLiked: true }
-      })
-    } catch (error) {
+        // Get updated like count
+        const likesCount = await CommentLikeModel.countDocuments({ commentId })
+
+        // Emit socket event for real-time likes
+        const { io } = require('~/lib/socket')
+        if (io) {
+          // Emit sự kiện COMMENT_LIKE_UPDATED cho comment room
+          const roomName = `comment:${commentId}`
+          io.to(roomName).emit('COMMENT_LIKE_UPDATED', {
+            commentId,
+            likesCount
+          })
+          console.log(`Emitted COMMENT_LIKE_UPDATED event to room ${roomName}`)
+        }
+
+        return res.status(200).json({
+          message: 'Comment liked successfully',
+          data: { likesCount, userLiked: true }
+        })
+      }
+    } catch (error: any) {
       return res.status(500).json({ message: error })
     }
   }
@@ -550,7 +603,7 @@ class PostController {
         message: 'Comment unliked successfully',
         data: { likesCount, userLiked: false }
       })
-    } catch (error) {
+    } catch (error: any) {
       return res.status(500).json({ message: error })
     }
   }
@@ -560,43 +613,70 @@ class PostController {
     try {
       const { postId } = req.params
       const currentUserId = req.context?.user?._id
-      
+
       if (!postId) {
         return res.status(400).json({ message: 'Post ID is required' })
       }
-      
-      // Tìm bài viết theo ID
-      const post = await PostModel.findById(postId).populate('user_id')
-      
+
+      // Tìm bài viết theo ID và populate thông tin user
+      const post = await PostModel.findById(postId).populate('userId', 'name username avatar')
+
       if (!post) {
         return res.status(404).json({ message: 'Post not found' })
       }
-      
+
       // Kiểm tra quyền truy cập nếu bài viết là private
-      if (post.post_type === 'private' && post.user_id._id.toString() !== currentUserId?.toString()) {
+      if (
+        post.post_type === 'private' &&
+        post.userId._id.toString() !== currentUserId?.toString()
+      ) {
         return res.status(403).json({ message: 'You do not have permission to view this post' })
       }
-      
-      // Lấy số lượng like và kiểm tra xem người dùng hiện tại đã like bài viết chưa
+
+      // Đếm số lượt thích
       const likesCount = await PostLikeModel.countDocuments({ postId: post._id })
-      const userLiked = currentUserId 
+
+      // Kiểm tra người dùng hiện tại đã thích bài viết chưa
+      const userLiked = currentUserId
         ? await PostLikeModel.exists({ postId: post._id, userId: currentUserId })
         : false
-      
-      // Trả về bài viết với thông tin bổ sung
-      const postWithDetails = {
-        ...post.toObject(),
-        likesCount,
-        userLiked: !!userLiked
+
+      // Lấy danh sách người dùng đã like bài viết (giới hạn 10 người mới nhất)
+      const likedUsers = await PostLikeModel.find({ postId: post._id })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('userId', 'name username avatar')
+        .lean()
+
+      // Đếm số bình luận
+      const commentsCount = await PostCommentModel.countDocuments({ postId: post._id })
+
+      // Nếu là bài viết chia sẻ, lấy thông tin bài viết gốc
+      let sharedPostData = null
+      if (post.shared_post) {
+        sharedPostData = await PostModel.findById(post.shared_post)
+          .populate('userId', 'name username avatar')
+          .lean()
       }
-      
-      return res.status(200).json({ 
-        message: 'success',
-        data: postWithDetails
+
+      // Chuyển đổi post thành plain object
+      const postObject = post.toObject()
+
+      // Trả về dữ liệu bài viết với thông tin bổ sung và đảm bảo tính nhất quán
+      return res.status(200).json({
+        message: 'Post retrieved successfully',
+        data: {
+          ...postObject,
+          likesCount,
+          commentsCount,
+          userLiked: !!userLiked,
+          likedUsers: likedUsers.map((like) => like.userId), // Chỉ lấy thông tin người dùng
+          shared_post_data: sharedPostData
+        }
       })
-    } catch (error) {
-      console.error('Error in getPostById:', error)
-      return res.status(500).json({ message: error })
+    } catch (error: any) {
+      console.error('Error getting post by ID:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 
@@ -606,7 +686,7 @@ class PostController {
       const userId = req.context?.user?._id
       const { postId } = req.body
 
-      console.log('sharePost called with:', { userId, postId });
+      console.log('sharePost called with:', { userId, postId })
 
       if (!postId) {
         return res.status(400).json({ message: 'Post ID is required' })
@@ -622,7 +702,7 @@ class PostController {
         return res.status(404).json({ message: 'Post not found' })
       }
 
-      console.log('Creating shared post with:', { userId, postId });
+      console.log('Creating shared post with:', { userId, postId })
 
       // Tạo bài viết chia sẻ - sử dụng tên trường đúng (userId thay vì user_id)
       const sharedPost = await PostModel.create({
@@ -632,12 +712,11 @@ class PostController {
         shared_post: postId
       })
 
-      console.log('Shared post created:', sharedPost);
+      console.log('Shared post created:', sharedPost)
 
       // Tạo thông báo cho tác giả bài viết gốc (nếu không phải tự chia sẻ)
-      const originalUserId = originalPost.userId || originalPost.user_id;
-      if (originalUserId && userId && 
-          originalUserId.toString() !== userId.toString()) {
+      const originalUserId = originalPost.userId || originalPost.userId
+      if (originalUserId && userId && originalUserId?.toString() !== userId?.toString()) {
         await NotificationModel.create({
           userId: originalUserId,
           senderId: userId,
@@ -650,7 +729,7 @@ class PostController {
         message: 'Post shared successfully',
         data: sharedPost
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sharing post:', error)
       return res.status(500).json({ message: 'Failed to share post' })
     }
@@ -662,7 +741,7 @@ class PostController {
       const { userId } = req.params
       const { page, limit } = req.query
       const currentUserId = req.context?.user?._id
-      
+
       // Convert query params to appropriate types
       const pageNumber = parseInt(page as string) || 1
       const limitNumber = parseInt(limit as string) || 5
@@ -675,7 +754,7 @@ class PostController {
 
       // Build query object
       const query: any = { userId: userId }
-      
+
       // Chỉ hiển thị bài viết public nếu không phải người dùng hiện tại
       if (currentUserId?.toString() !== userId) {
         query.post_type = { $ne: 'private' }
@@ -698,12 +777,12 @@ class PostController {
           try {
             // Đếm số lượt thích
             const likesCount = await PostLikeModel.countDocuments({ postId: post._id })
-            
+
             // Kiểm tra người dùng hiện tại đã thích bài viết chưa
-            const userLiked = currentUserId 
+            const userLiked = currentUserId
               ? await PostLikeModel.exists({ postId: post._id, userId: currentUserId })
               : false
-            
+
             // Đếm số bình luận
             const commentsCount = await PostCommentModel.countDocuments({ postId: post._id })
 
@@ -722,7 +801,7 @@ class PostController {
               userLiked: !!userLiked,
               shared_post_data: sharedPostData
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error processing post:', post._id, error)
             return post
           }
@@ -739,9 +818,64 @@ class PostController {
           hasMore: pageNumber < Math.ceil(total / limitNumber)
         }
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in getUserPosts:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
+    }
+  }
+
+  async getCommentReplies(req: Request, res: Response): Promise<any> {
+    try {
+      const { commentId } = req.params;
+      const userId = req.context?.user?._id;
+      
+      console.log(`Getting replies for comment ${commentId}, user ${userId}`);
+
+      // Lấy các reply của comment
+      const replies = await PostCommentModel.find({ parentId: commentId })
+        .populate('userId', 'name avatar')
+        .sort({ createdAt: -1 });
+      
+      // Lấy thông tin like của người dùng hiện tại cho mỗi reply
+      const repliesWithLikeInfo = await Promise.all(
+        replies.map(async (reply) => {
+          const likesCount = await CommentLikeModel.countDocuments({ commentId: reply._id });
+          
+          // Kiểm tra xem người dùng hiện tại đã like reply này chưa
+          let userLiked = false;
+          if (userId) {
+            const userLike = await CommentLikeModel.findOne({ commentId: reply._id, userId });
+            userLiked = !!userLike;
+          }
+          
+          console.log(`Reply ${reply._id} - userLiked:`, userLiked, 'likesCount:', likesCount);
+          
+          return {
+            ...reply.toObject(),
+            likesCount,
+            userLiked
+          };
+        })
+      );
+      
+      console.log('Sending replies with like info:', repliesWithLikeInfo.map(r => ({ 
+        id: r._id, 
+        userLiked: r.userLiked,
+        likesCount: r.likesCount
+      })));
+      
+      return res.status(200).json({
+        message: 'Get comment replies successfully',
+        data: {
+          data: repliesWithLikeInfo,
+          pagination: {
+            total: repliesWithLikeInfo.length
+          }
+        }
+      });
+    } catch (error: any) {
+      console.error('Error getting comment replies:', error);
+      return res.status(500).json({ message: error.message || 'Internal server error' });
     }
   }
 }

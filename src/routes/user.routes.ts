@@ -26,6 +26,13 @@ userRoutes.patch(
   wrapRequestHandler(userController.updateMyProfile)
 )
 
+userRoutes.get(
+  '/blocked-users',
+  accessTokenValidator,
+  verifiedUserValidator,
+  userController.getBlockedUsers
+)
+
 // Get user by ID
 userRoutes.get(
   '/:userId',
@@ -41,5 +48,13 @@ userRoutes.get(
   verifiedUserValidator,
   wrapRequestHandler(userController.getUserByUsername)
 )
+
+// Block/Unblock user
+userRoutes.post('/block', accessTokenValidator, verifiedUserValidator, userController.blockUser)
+
+userRoutes.post('/unblock', accessTokenValidator, verifiedUserValidator, userController.unblockUser)
+
+// Kiểm tra xem người dùng hiện tại có bị chặn bởi người dùng khác không
+userRoutes.get('/is-blocked-by/:userId', accessTokenValidator, verifiedUserValidator, userController.isBlockedByUser)
 
 export default userRoutes

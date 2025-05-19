@@ -86,4 +86,12 @@ postsRoutes.get(
   wrapRequestHandler(postController.getUserPosts)
 )
 
+// Get post by ID
+postsRoutes.get(
+  '/:postId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.getPostById)
+)
+
 export default postsRoutes

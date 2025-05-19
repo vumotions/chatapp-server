@@ -44,14 +44,23 @@ class ConversationsController {
       // Xây dựng query dựa trên filter
       const query: any = {
         participants: userId,
-        archived: { $ne: true } // Chỉ lấy những chat KHÔNG được archive
-        // Đã loại bỏ deletedFor
+        archivedFor: { $ne: userId } // Không lấy những chat đã được archive bởi người dùng hiện tại
       }
 
       if (filter === 'unread') {
         query.read = false
         query.lastMessage = { $exists: true } // Chỉ lấy những chat có tin nhắn
       }
+
+      // Thêm điều kiện tìm kiếm nếu có
+      if (searchQuery) {
+        query.$or = [
+          { name: { $regex: searchQuery, $options: 'i' } }
+          // Có thể thêm các điều kiện tìm kiếm khác nếu cần
+        ]
+      }
+
+      console.log('Query for user conversations:', JSON.stringify(query))
 
       // Tìm tất cả cuộc trò chuyện mà người dùng tham gia
       let conversations = await ChatModel.find(query)
@@ -67,6 +76,8 @@ class ConversationsController {
           }
         })
         .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
         .lean() // Convert to plain JavaScript objects
 
       console.log(`Found ${conversations.length} conversations before processing`)
@@ -145,72 +156,93 @@ class ConversationsController {
   }
 
   async getMessagesByConversation(req: Request, res: Response, next: NextFunction) {
-    const conversationId = req.params?.chatId
-    const userId = req.context?.user?._id
-    const page = parseInt(req.query?.page as string) || 1
-    const limit = parseInt(req.query?.limit as string) || 10
-    const skip = (page - 1) * limit
+    try {
+      const conversationId = req.params?.chatId
+      const userId = req.context?.user?._id
+      const page = parseInt(req.query?.page as string) || 1
+      const limit = parseInt(req.query?.limit as string) || 10
+      const skip = (page - 1) * limit
 
-    console.log(
-      `Fetching messages for conversation ${conversationId}, page ${page}, limit ${limit}`
-    )
+      console.log(
+        `Fetching messages for conversation ${conversationId}, page ${page}, limit ${limit}`
+      )
 
-    // Nếu không có conversationId, trả về lỗi
-    if (!conversationId) {
-      next(
-        new AppError({
-          status: status.BAD_REQUEST,
-          message: 'Conversation ID is required'
+      // Nếu không có conversationId, trả về lỗi
+      if (!conversationId) {
+        next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Conversation ID is required'
+          })
+        )
+        return
+      }
+
+      // Kiểm tra tính hợp lệ của conversationId
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+        next(
+          new AppError({
+            status: status.BAD_REQUEST,
+            message: 'Invalid conversation ID'
+          })
+        )
+        return
+      }
+
+      // Tìm conversation
+      let conversation = await ChatModel.findById(conversationId)
+        .populate('participants', 'name avatar username')
+        .populate({
+          path: 'lastMessage',
+          populate: {
+            path: 'senderId',
+            select: 'name avatar username'
+          }
+        })
+
+      // Kiểm tra xem người dùng có xóa lịch sử tin nhắn không
+      const deletedMessagesRecord = conversation?.deletedMessagesFor?.find(
+        record => record.userId.toString() === userId?.toString()
+      )
+
+      // Tạo query để lấy tin nhắn
+      let messageQuery: any = { chatId: conversationId }
+      
+      // Nếu người dùng đã xóa lịch sử, chỉ lấy tin nhắn sau thời điểm xóa
+      if (deletedMessagesRecord) {
+        messageQuery = {
+          ...messageQuery,
+          createdAt: { $gt: deletedMessagesRecord.deletedAt }
+        }
+      }
+
+      // Lấy danh sách tin nhắn của conversation
+      const messages = await MessageModel.find(messageQuery)
+        .skip(skip)
+        .limit(limit)
+        .populate('senderId', 'name avatar username')
+        .sort({ createdAt: -1 })
+
+      // Kiểm tra xem còn dữ liệu phía sau không
+      const totalMessages = await MessageModel.countDocuments(messageQuery)
+      const hasMore = page * limit < totalMessages
+
+      console.log(`Found ${messages.length} messages, total: ${totalMessages}, hasMore: ${hasMore}`)
+
+      res.json(
+        new AppSuccess({
+          message: 'Get messages successfully',
+          data: {
+            conversation,
+            messages,
+            hasMore
+          }
         })
       )
-      return
+    } catch (error) {
+      console.error('Error in getMessagesByConversation:', error)
+      next(error)
     }
-
-    // Kiểm tra tính hợp lệ của conversationId
-    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
-      next(
-        new AppError({
-          status: status.BAD_REQUEST,
-          message: 'Invalid conversation ID'
-        })
-      )
-      return
-    }
-
-    // Tìm conversation
-    let conversation = await ChatModel.findById(conversationId)
-      .populate('participants', 'name avatar username')
-      .populate({
-        path: 'lastMessage',
-        populate: {
-          path: 'senderId',
-          select: 'name avatar username'
-        }
-      })
-
-    // Lấy danh sách tin nhắn của conversation
-    const messages = await MessageModel.find({ chatId: conversationId })
-      .skip(skip)
-      .limit(limit)
-      .populate('senderId', 'name avatar username')
-      .sort({ createdAt: -1 })
-
-    // Kiểm tra xem còn dữ liệu phía sau không
-    const totalMessages = await MessageModel.countDocuments({ chatId: conversationId })
-    const hasMore = page * limit < totalMessages
-
-    console.log(`Found ${messages.length} messages, total: ${totalMessages}, hasMore: ${hasMore}`)
-
-    res.json(
-      new AppSuccess({
-        message: 'Get messages successfully',
-        data: {
-          conversation,
-          messages,
-          hasMore
-        }
-      })
-    )
   }
 
   async createConversation(req: Request, res: Response, next: NextFunction) {
@@ -846,14 +878,18 @@ class ConversationsController {
       // Xây dựng query cho archived chats
       const query: any = {
         participants: userId,
-        archived: true
-        // Đã loại bỏ deletedFor
+        archivedFor: userId // Tìm các cuộc trò chuyện có userId trong mảng archivedFor
       }
 
       // Thêm điều kiện tìm kiếm nếu có
       if (searchQuery) {
-        query.$or = [{ name: { $regex: searchQuery, $options: 'i' } }]
+        query.$or = [
+          { name: { $regex: searchQuery, $options: 'i' } }
+          // Có thể thêm các điều kiện tìm kiếm khác nếu cần
+        ]
       }
+
+      console.log('Query for archived chats:', JSON.stringify(query))
 
       // Tìm tất cả cuộc trò chuyện đã lưu trữ
       const conversations = await ChatModel.find(query)
@@ -872,6 +908,8 @@ class ConversationsController {
         .skip(skip)
         .limit(limit)
         .lean()
+
+      console.log(`Found ${conversations.length} archived conversations`)
 
       // Đếm tổng số cuộc trò chuyện để phân trang
       const total = await ChatModel.countDocuments(query)
@@ -907,21 +945,13 @@ class ConversationsController {
 
       console.log('Archiving conversation:', conversationId, 'by user:', userId)
 
-      // Tìm và cập nhật cuộc trò chuyện
-      const updatedConversation = await ChatModel.findOneAndUpdate(
-        {
-          _id: conversationId,
-          participants: userId
-        },
-        { $set: { archived: true } }, // Đảm bảo sử dụng $set để cập nhật
-        {
-          new: true, // Trả về document sau khi cập nhật
-          runValidators: true // Đảm bảo validate dữ liệu
-        }
-      )
-
       // Kiểm tra cuộc trò chuyện tồn tại
-      if (!updatedConversation) {
+      const conversation = await ChatModel.findOne({
+        _id: conversationId,
+        participants: userId
+      })
+
+      if (!conversation) {
         return next(
           new AppError({
             status: status.NOT_FOUND,
@@ -930,11 +960,39 @@ class ConversationsController {
         )
       }
 
+      console.log('Found conversation to archive:', conversation._id)
+      console.log('Current archivedFor:', conversation.archivedFor || [])
+
+      // Cập nhật trường archivedFor để thêm userId
+      const updatedConversation = await ChatModel.findOneAndUpdate(
+        {
+          _id: conversationId,
+          participants: userId
+        },
+        {
+          $addToSet: { archivedFor: userId } // Sử dụng $addToSet để tránh trùng lặp
+        },
+        {
+          new: true,
+          runValidators: true
+        }
+      )
+
+      if (!updatedConversation) {
+        console.error('Failed to update conversation')
+        return next(
+          new AppError({
+            status: status.INTERNAL_SERVER_ERROR,
+            message: 'Failed to archive conversation'
+          })
+        )
+      }
+
       // Log để kiểm tra
-      console.log('Conversation after archive:', JSON.stringify(updatedConversation, null, 2))
+      console.log('Updated conversation archivedFor:', updatedConversation.archivedFor || [])
 
       // Populate dữ liệu cần thiết
-      await updatedConversation.populate([
+      const populatedConversation = await ChatModel.findById(conversationId).populate([
         {
           path: 'participants',
           select: 'name avatar username'
@@ -950,7 +1008,7 @@ class ConversationsController {
 
       res.json(
         new AppSuccess({
-          data: updatedConversation,
+          data: populatedConversation,
           message: 'Conversation archived successfully'
         })
       )
@@ -986,14 +1044,21 @@ class ConversationsController {
         )
       }
 
-      // Tìm cuộc trò chuyện
-      const conversation = await ChatModel.findOne({
-        _id: conversationId,
-        participants: userId
-      })
+      // Tìm và cập nhật cuộc trò chuyện
+      const updatedConversation = await ChatModel.findOneAndUpdate(
+        {
+          _id: conversationId,
+          participants: userId
+        },
+        { $pull: { archivedFor: userId } }, // Xóa userId khỏi mảng archivedFor
+        {
+          new: true,
+          runValidators: true
+        }
+      )
 
       // Kiểm tra cuộc trò chuyện tồn tại
-      if (!conversation) {
+      if (!updatedConversation) {
         return next(
           new AppError({
             status: status.NOT_FOUND,
@@ -1002,14 +1067,10 @@ class ConversationsController {
         )
       }
 
-      // Cập nhật trạng thái archived
-      conversation.archived = false
-      await conversation.save()
-
       res.json(
         new AppSuccess({
           message: 'Conversation unarchived successfully',
-          data: conversation
+          data: updatedConversation
         })
       )
     } catch (error) {
@@ -3708,6 +3769,62 @@ class ConversationsController {
         })
       )
     } catch (error) {
+      next(error)
+    }
+  }
+  // Phương thức xóa lịch sử chat
+  async clearChatHistory(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+      const { conversationId } = req.params
+
+      if (!userId) {
+        return next(
+          new AppError({
+            status: status.UNAUTHORIZED,
+            message: 'Unauthorized'
+          })
+        )
+      }
+
+      // Tìm cuộc trò chuyện
+      const conversation = await ChatModel.findOne({
+        _id: conversationId,
+        participants: userId
+      })
+
+      if (!conversation) {
+        return next(
+          new AppError({
+            status: status.NOT_FOUND,
+            message: 'Conversation not found'
+          })
+        )
+      }
+
+      // Bước 1: Xóa bản ghi cũ nếu có
+      await ChatModel.findByIdAndUpdate(conversationId, {
+        $pull: { deletedMessagesFor: { userId } }
+      });
+
+      // Bước 2: Thêm bản ghi mới
+      await ChatModel.findByIdAndUpdate(conversationId, {
+        $push: {
+          deletedMessagesFor: {
+            userId,
+            deletedAt: new Date()
+          }
+        }
+      });
+
+      res.json(
+        new AppSuccess({
+          data: { conversationId },
+          message: 'Lịch sử tin nhắn đã được xóa'
+        })
+      )
+    } catch (error) {
+      console.error('Error in clearChatHistory:', error)
       next(error)
     }
   }

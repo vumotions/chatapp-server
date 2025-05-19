@@ -27,7 +27,12 @@ export interface IChat extends Document {
   participants: Schema.Types.ObjectId[]
   members: IChatMember[]
   read: boolean
-  archived: boolean
+  archived: boolean // Giữ lại để tương thích ngược
+  archivedFor: Schema.Types.ObjectId[] // Mảng archivedFor để ẩn cuộc trò chuyện
+  deletedMessagesFor: Array<{
+    userId: Schema.Types.ObjectId,
+    deletedAt: Date
+  }>
   inviteLink?: string
   requireApproval?: boolean
   pendingRequests?: Array<{
@@ -39,7 +44,6 @@ export interface IChat extends Document {
     processedBy?: Schema.Types.ObjectId
   }>
   formerMembers?: IFormerMember[]
-  // Thêm các trường mới cho chức năng "Chỉ owner và admin được gửi tin nhắn"
   onlyAdminsCanSend: boolean
   restrictUntil: Date | null
 }
@@ -175,6 +179,24 @@ const chatSchema = new Schema<IChat>(
       type: Boolean,
       default: false
     },
+    archivedFor: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    deletedMessagesFor: [
+      {
+        userId: {
+          type: Schema.Types.ObjectId,
+          ref: 'User'
+        },
+        deletedAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
     inviteLink: {
       type: String,
       default: () => nanoid(10)
@@ -192,7 +214,6 @@ const chatSchema = new Schema<IChat>(
     members: [chatMemberSchema],
     pendingRequests: [joinRequestSchema],
     formerMembers: [formerMemberSchema],
-    // Thêm các trường mới cho chức năng "Chỉ owner và admin được gửi tin nhắn"
     onlyAdminsCanSend: {
       type: Boolean,
       default: false

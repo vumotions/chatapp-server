@@ -292,4 +292,12 @@ conversationsRoutes.get(
   wrapRequestHandler(conversationsController.checkSendMessagePermission)
 )
 
+// Thêm route để xóa lịch sử chat
+conversationsRoutes.delete(
+  '/:conversationId/clear-history',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(conversationsController.clearChatHistory)
+)
+
 export default conversationsRoutes

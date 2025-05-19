@@ -2,7 +2,6 @@ import type { Server as HttpServer } from 'http'
 import status from 'http-status'
 import { ObjectId, Schema, Types } from 'mongoose'
 import { Server } from 'socket.io'
-import { nanoid } from 'nanoid'
 import { env } from '~/config/env'
 import { CHAT_TYPE, MESSAGE_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
@@ -132,16 +131,15 @@ const initSocket = async (server: HttpServer) => {
     })
 
     // Handle send message
-    socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data) => {
+    socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data: any) => {
       try {
         const { chatId, content, attachments, type, participants, chatType, tempId } = data
-        
+
         // Kiểm tra quyền gửi tin nhắn
         const canSendMessage = await checkUserCanSendMessage(socket, chatId)
         if (!canSendMessage) {
-          return // Hàm checkUserCanSendMessage đã gửi thông báo lỗi
+          return
         }
-        
         // Tiếp tục logic gửi tin nhắn hiện tại
         let chat
 
@@ -227,7 +225,7 @@ const initSocket = async (server: HttpServer) => {
             tempId // Lưu tempId để client có thể theo dõi
           })
         ])
-
+        console.log({ message })
         // Cập nhật chat
         chat.lastMessage = message._id as ObjectId
         chat.read = false

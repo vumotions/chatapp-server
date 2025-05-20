@@ -356,6 +356,13 @@ const initSocket = async (server: HttpServer) => {
           senderName: senderInfo.name,
           senderAvatar: senderInfo.avatar
         })
+        console.log({
+          ...message.toObject(),
+          senderId: userId.toString(), // Gửi senderId dưới dạng string
+          senderInfo: senderInfo, // Gửi thông tin người gửi dưới dạng object riêng biệt
+          senderName: senderInfo.name,
+          senderAvatar: senderInfo.avatar
+        })
 
         // Tạo thông báo cho tất cả người tham gia trừ người gửi
         for (const participantId of chat.participants) {

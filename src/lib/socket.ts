@@ -769,6 +769,226 @@ const initSocket = async (server: HttpServer) => {
         socket.emit(SOCKET_EVENTS.ERROR, { message: 'Xóa tin nhắn thất bại' })
       }
     })
+
+    // Thêm xử lý các sự kiện liên quan đến cuộc gọi
+    socket.on(SOCKET_EVENTS.CALL_INITIATED, async (data) => {
+      try {
+        const { recipientId, chatId, callType } = data
+        console.log(`User ${userId} initiated a call to ${recipientId} in chat ${chatId}`)
+
+        // Lấy thông tin người gọi để gửi kèm
+        const caller = await UserModel.findById(userId).select('name avatar').lean()
+
+        const recipientSocketId = users.get(recipientId)
+
+        if (recipientSocketId) {
+          // Gửi thông báo cuộc gọi đến người nhận kèm thông tin người gọi
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.INCOMING_CALL, {
+            callerId: userId,
+            callerName: caller?.name || 'Người dùng',
+            callerAvatar: caller?.avatar || null,
+            chatId,
+            callType
+          })
+
+          console.log(`Sent incoming call notification to ${recipientId}`)
+        } else {
+          // Người nhận không online
+          socket.emit(SOCKET_EVENTS.CALL_REJECTED, {
+            chatId,
+            recipientId,
+            reason: 'RECIPIENT_OFFLINE'
+          })
+
+          console.log(`Recipient ${recipientId} is offline, call rejected`)
+        }
+      } catch (error) {
+        console.error('Error handling CALL_INITIATED:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.SDP_OFFER, (data) => {
+      try {
+        const { sdp, recipientId, chatId, callType } = data
+        console.log(`Forwarding SDP offer from ${userId} to ${recipientId}`)
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.SDP_OFFER, {
+            sdp,
+            callerId: userId,
+            chatId,
+            callType
+          })
+        }
+      } catch (error) {
+        console.error('Error handling SDP_OFFER:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.SDP_ANSWER, (data) => {
+      try {
+        const { sdp, recipientId, chatId } = data
+        console.log(`Forwarding SDP answer from ${userId} to ${recipientId}`)
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.SDP_ANSWER, {
+            sdp,
+            callerId: userId,
+            chatId
+          })
+        }
+      } catch (error) {
+        console.error('Error handling SDP_ANSWER:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.ICE_CANDIDATE, (data) => {
+      try {
+        const { candidate, recipientId, chatId } = data
+        console.log(`Forwarding ICE candidate from ${userId} to ${recipientId}`)
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.ICE_CANDIDATE, {
+            candidate,
+            callerId: userId,
+            chatId
+          })
+        }
+      } catch (error) {
+        console.error('Error handling ICE_CANDIDATE:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.CALL_ACCEPTED, (data) => {
+      try {
+        const { callerId, chatId } = data
+        console.log(`User ${userId} accepted call from ${callerId} in chat ${chatId}`)
+
+        const callerSocketId = users.get(callerId)
+        if (callerSocketId) {
+          io.to(callerSocketId).emit(SOCKET_EVENTS.CALL_ACCEPTED, {
+            recipientId: userId,
+            chatId
+          })
+        }
+      } catch (error) {
+        console.error('Error handling CALL_ACCEPTED:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.CALL_REJECTED, (data) => {
+      try {
+        const { callerId, chatId } = data
+        console.log(`User ${userId} rejected call from ${callerId} in chat ${chatId}`)
+
+        const callerSocketId = users.get(callerId)
+        if (callerSocketId) {
+          io.to(callerSocketId).emit(SOCKET_EVENTS.CALL_REJECTED, {
+            recipientId: userId,
+            chatId
+          })
+        }
+      } catch (error) {
+        console.error('Error handling CALL_REJECTED:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.CALL_ENDED, (data) => {
+      try {
+        const { recipientId, chatId } = data
+        console.log(`User ${userId} ended call with ${recipientId} in chat ${chatId}`)
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.CALL_ENDED, {
+            callerId: userId,
+            chatId
+          })
+        }
+      } catch (error) {
+        console.error('Error handling CALL_ENDED:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.TOGGLE_AUDIO, (data) => {
+      try {
+        const { recipientId, chatId, isMuted } = data
+        console.log(`User ${userId} toggled audio (muted: ${isMuted}) in call with ${recipientId}`)
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.TOGGLE_AUDIO, {
+            callerId: userId,
+            chatId,
+            isMuted
+          })
+        }
+      } catch (error) {
+        console.error('Error handling TOGGLE_AUDIO:', error)
+      }
+    })
+
+    socket.on(SOCKET_EVENTS.TOGGLE_VIDEO, (data) => {
+      try {
+        const { recipientId, chatId, isCameraOff } = data
+        console.log(
+          `User ${userId} toggled video (camera off: ${isCameraOff}) in call with ${recipientId}`
+        )
+
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.TOGGLE_VIDEO, {
+            callerId: userId,
+            chatId,
+            isCameraOff
+          })
+        }
+      } catch (error) {
+        console.error('Error handling TOGGLE_VIDEO:', error)
+      }
+    })
+
+    // Xử lý cuộc gọi nhỡ
+    socket.on(SOCKET_EVENTS.CALL_MISSED, (data) => {
+      try {
+        const { recipientId, chatId } = data
+        console.log(`Call from ${userId} to ${recipientId} in chat ${chatId} was missed`)
+
+        // Tạo thông báo cuộc gọi nhỡ
+        NotificationModel.create({
+          userId: recipientId,
+          senderId: userId,
+          type: NOTIFICATION_TYPE.MISSED_CALL,
+          relatedId: new Types.ObjectId(chatId),
+          metadata: {
+            chatId,
+            timestamp: new Date()
+          }
+        }).then((notification) => {
+          // Gửi thông báo qua socket nếu người dùng online
+          const recipientSocketId = users.get(recipientId)
+          if (recipientSocketId) {
+            UserModel.findById(userId, 'name avatar')
+              .lean()
+              .then((caller) => {
+                io.to(recipientSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
+                  ...notification.toObject(),
+                  sender: {
+                    _id: userId,
+                    name: caller?.name || 'Người dùng',
+                    avatar: caller?.avatar || null
+                  }
+                })
+              })
+          }
+        })
+      } catch (error) {
+        console.error('Error handling CALL_MISSED:', error)
+      }
+    })
   })
 
   return io // Đảm bảo trả về đối tượng io

@@ -771,39 +771,37 @@ const initSocket = async (server: HttpServer) => {
     })
 
     // Thêm xử lý các sự kiện liên quan đến cuộc gọi
-    socket.on(SOCKET_EVENTS.CALL_INITIATED, async (data) => {
+    socket.on(SOCKET_EVENTS.INITIATE_CALL, async (data) => {
       try {
         const { recipientId, chatId, callType } = data
-        console.log(`User ${userId} initiated a call to ${recipientId} in chat ${chatId}`)
+        console.log(`User ${userId} initiating ${callType} call to ${recipientId} in chat ${chatId}`)
 
-        // Lấy thông tin người gọi để gửi kèm
-        const caller = await UserModel.findById(userId).select('name avatar').lean()
+        // Lấy thông tin người gọi từ database
+        const caller = await UserModel.findById(userId).select('name avatar username').lean()
+        
+        const callerName = caller?.name || caller?.username || 'Unknown User'
+        const callerAvatar = caller?.avatar || ''
 
         const recipientSocketId = users.get(recipientId)
-
         if (recipientSocketId) {
-          // Gửi thông báo cuộc gọi đến người nhận kèm thông tin người gọi
+          // Gửi thông báo cuộc gọi đến cho người nhận với đầy đủ thông tin người gọi
           io.to(recipientSocketId).emit(SOCKET_EVENTS.INCOMING_CALL, {
             callerId: userId,
-            callerName: caller?.name || 'Người dùng',
-            callerAvatar: caller?.avatar || null,
+            callerName: callerName,
+            callerAvatar: callerAvatar,
             chatId,
             callType
           })
-
-          console.log(`Sent incoming call notification to ${recipientId}`)
         } else {
-          // Người nhận không online
-          socket.emit(SOCKET_EVENTS.CALL_REJECTED, {
-            chatId,
+          // Người nhận không online, gửi thông báo cuộc gọi nhỡ
+          socket.emit(SOCKET_EVENTS.CALL_MISSED, {
             recipientId,
+            chatId,
             reason: 'RECIPIENT_OFFLINE'
           })
-
-          console.log(`Recipient ${recipientId} is offline, call rejected`)
         }
       } catch (error) {
-        console.error('Error handling CALL_INITIATED:', error)
+        console.error('Error handling INITIATE_CALL:', error)
       }
     })
 

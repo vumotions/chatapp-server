@@ -9,9 +9,9 @@ const uploadRoutes = Router()
 // Upload files
 uploadRoutes.post(
   '/files',
+  uploadMiddleware,
   accessTokenValidator,
   verifiedUserValidator,
-  uploadMiddleware,
   wrapRequestHandler(uploadController.uploadFiles)
 )
 

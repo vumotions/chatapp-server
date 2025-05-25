@@ -238,6 +238,7 @@ const initSocket = async (server: HttpServer) => {
 
     // Handle send message
     socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data: any) => {
+      console.log({ data })
       try {
         const { chatId, content, attachments, type, participants, chatType, tempId } = data
 
@@ -774,11 +775,13 @@ const initSocket = async (server: HttpServer) => {
     socket.on(SOCKET_EVENTS.INITIATE_CALL, async (data) => {
       try {
         const { recipientId, chatId, callType } = data
-        console.log(`User ${userId} initiating ${callType} call to ${recipientId} in chat ${chatId}`)
+        console.log(
+          `User ${userId} initiating ${callType} call to ${recipientId} in chat ${chatId}`
+        )
 
         // Lấy thông tin người gọi từ database
         const caller = await UserModel.findById(userId).select('name avatar username').lean()
-        
+
         const callerName = caller?.name || caller?.username || 'Unknown User'
         const callerAvatar = caller?.avatar || ''
 

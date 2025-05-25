@@ -57,7 +57,7 @@ const messageSchema = new Schema<IMessage>(
         },
         type: {
           type: String,
-          enum: [MEDIA_TYPE.FILE, MEDIA_TYPE.VIDEO, MEDIA_TYPE.IMAGE],
+          enum: Object.values(MEDIA_TYPE),
           required: true
         }
       }

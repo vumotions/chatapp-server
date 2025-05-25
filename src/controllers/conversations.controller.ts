@@ -1119,7 +1119,34 @@ class ConversationsController {
         )
       }
 
-      // Kiểm tra quyền ghim tin nhắn
+      // Kiểm tra loại chat
+      const isPrivateChat = chat.type === 'PRIVATE'
+
+      // Nếu là private chat, cho phép cả hai người dùng ghim tin nhắn
+      if (isPrivateChat) {
+        // Cập nhật trạng thái ghim của tin nhắn
+        message.isPinned = !message.isPinned
+        await message.save()
+
+        // Thông báo cho tất cả người dùng trong chat
+        emitSocketEvent(message.chatId.toString(), SOCKET_EVENTS.MESSAGE_PINNED, {
+          messageId: message._id,
+          isPinned: message.isPinned,
+          chatId: message.chatId.toString()
+        })
+
+        res.json(
+          new AppSuccess({
+            message: message.isPinned
+              ? 'Message pinned successfully'
+              : 'Message unpinned successfully',
+            data: message
+          })
+        )
+        return
+      }
+
+      // Nếu là group chat, kiểm tra quyền ghim tin nhắn
       const member = chat.members.find((member) => member.userId.toString() === userId?.toString())
 
       // Nếu không tìm thấy thông tin thành viên

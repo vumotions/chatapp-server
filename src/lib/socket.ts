@@ -758,6 +758,19 @@ const initSocket = async (server: HttpServer) => {
 
           chat.lastMessage = lastMessage ? (lastMessage._id as Schema.Types.ObjectId) : undefined
           await chat.save()
+          
+          // Thêm đoạn này để thông báo cập nhật lastMessage
+          if (lastMessage) {
+            // Populate thông tin người gửi để client hiển thị đúng
+            const populatedMessage = await MessageModel.findById(lastMessage._id)
+              .populate('senderId', 'name avatar username')
+              .lean()
+            
+            io.to(chatId).emit('LAST_MESSAGE_UPDATED', {
+              chatId,
+              lastMessage: populatedMessage
+            })
+          }
         }
 
         // Phát sóng sự kiện MESSAGE_DELETED đến tất cả người dùng trong chat

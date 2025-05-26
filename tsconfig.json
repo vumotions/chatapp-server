@@ -13,9 +13,11 @@
     },
     "noImplicitAny": false,
     "resolveJsonModule": true,
-    "typeRoots": ["./node_modules/@types", "./src"]
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "skipDefaultLibCheck": true,
+    "noEmitOnError": false
   },
-  "files": ["src/type.d.ts"],
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
 }
   

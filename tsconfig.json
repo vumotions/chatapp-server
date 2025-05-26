@@ -6,11 +6,13 @@
       "outDir": "dist",
       "esModuleInterop": true,
       "strict": true,
-      "skipLibCheck": true ,
+      "skipLibCheck": true,
       "baseUrl": ".",
       "paths": {
         "~/*": ["src/*"]
-      }
+      },
+      "typeRoots": ["./node_modules/@types", "./src/types"],
+      "noImplicitAny": false
     },
     "files": ["src/type.d.ts"],
     "include": ["src/**/*"]

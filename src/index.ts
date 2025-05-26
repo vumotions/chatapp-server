@@ -9,6 +9,8 @@ import dotenv from 'dotenv'
 const envPath = path.resolve(__dirname, '../.env')
 dotenv.config({ path: envPath })
 
+// Thêm vào đầu file
+import 'tsconfig-paths/register';
 
 import { env } from './config/env'
 import database from './lib/database'

@@ -19,6 +19,10 @@ export interface ISettings extends Document {
     blockedUsers: ObjectId[]
     activeSessions: string[]
   }
+  preferences: {
+    language: string
+    theme: string
+  }
 }
 
 const VISIBILITY = [ACCESS_SCOPE.CONTACTS, ACCESS_SCOPE.EVERYONE, ACCESS_SCOPE.NOBODY] as const
@@ -80,6 +84,24 @@ const settingsSchema = new Schema<ISettings>(
       default: {
         blockedUsers: [],
         activeSessions: []
+      }
+    },
+    preferences: {
+      type: {
+        language: {
+          type: String,
+          enum: ['en', 'vi', 'ru', 'zh'],
+          default: 'en'
+        },
+        theme: {
+          type: String,
+          enum: ['light', 'dark', 'system'],
+          default: 'system'
+        }
+      },
+      default: {
+        language: 'en',
+        theme: 'system'
       }
     }
   },

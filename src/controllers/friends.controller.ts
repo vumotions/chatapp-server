@@ -275,8 +275,10 @@ class FriendsController {
       })
 
       // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH, có phân trang
+      // QUAN TRỌNG: Loại bỏ những người đã gửi lời mời cho mình (receivedIds)
+      // để tránh trùng lặp với receivedSuggestions
       const allUsers = await UserModel.find({
-        _id: { $nin: excludeIds },
+        _id: { $nin: [...excludeIds, ...receivedIds] }, // Thêm receivedIds vào đây
         verify: USER_VERIFY_STATUS.VERIFIED
       })
         .select('_id name avatar username')
@@ -325,13 +327,13 @@ class FriendsController {
         _id: { $in: receivedIds },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
-        .select('_id name avatar username') // Thêm username vào đây
+        .select('_id name avatar username')
         .lean()
 
       const receivedSuggestions = receivedUsers.map((user) => ({
         ...user,
-        mutualFriends: 0, // Có thể tính số bạn chung nếu cần
-        status: 'RECEIVED' // Đánh dấu là đã nhận lời mời
+        mutualFriends: 0,
+        status: 'RECEIVED'
       }))
 
       // Kết hợp cả hai danh sách

@@ -6,6 +6,7 @@ import { UnprocessableEntityError } from '~/models/error.model'
 import { IUser } from '~/models/user.model'
 import { sendFriendRequestSchema } from '~/schemas/user/send-friend-request.schema'
 import { updateMyProfileSchema } from '~/schemas/user/update-profile.schema'
+import { updateSettingsSchema } from '~/schemas/user/update-settings.schema'
 import userService from '~/services/user.service'
 
 export const updateMyProfileValidator = async (req: Request, res: Response, next: NextFunction) => {
@@ -81,4 +82,8 @@ export const updateMyProfileValidator = async (req: Request, res: Response, next
 
 export const sendFriendRequestValidator = validate({
   params: sendFriendRequestSchema
+})
+
+export const updateSettingsValidator = validate({
+  body: updateSettingsSchema
 })

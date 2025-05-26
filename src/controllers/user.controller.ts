@@ -10,6 +10,7 @@ import SettingsModel from '~/models/settings.model'
 import FriendModel from '~/models/friend.model'
 import FriendRequestModel from '~/models/friend-request.model'
 import mongoose from 'mongoose'
+import { UpdateSettingsDTO } from '~/schemas/user/update-settings.schema'
 
 class UsersController {
   getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -43,6 +44,17 @@ class UsersController {
   // Add new method to get user by ID
   async getUserById(req: Request, res: Response, next: NextFunction) {
     const userId = req.params.userId
+
+    // Kiểm tra xem userId có phải là ObjectId hợp lệ không
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      next(
+        new AppError({
+          status: status.BAD_REQUEST,
+          message: 'Invalid user ID format'
+        })
+      )
+      return
+    }
 
     try {
       const user = await UserModel.findById(userId)
@@ -278,29 +290,96 @@ class UsersController {
     try {
       const currentUserId = (req.context?.user as IUser)._id
       const { userId } = req.params
-      
+
       // Kiểm tra xem userId có hợp lệ không
       if (!mongoose.Types.ObjectId.isValid(userId)) {
-        return res.json(
+        res.json(
           new AppSuccess({
             message: 'Kiểm tra trạng thái chặn',
             data: { isBlocked: false }
           })
         )
+        return
       }
-      
+
       // Tìm settings của người dùng khác
       const otherUserSettings = await SettingsModel.findOne({ userId })
-      
+
       // Kiểm tra xem người dùng hiện tại có bị chặn không
-      const isBlocked = otherUserSettings?.security.blockedUsers.some(
-        (id) => id.toString() === currentUserId.toString()
-      ) || false
-      
+      const isBlocked =
+        otherUserSettings?.security.blockedUsers.some(
+          (id) => id.toString() === currentUserId?.toString()
+        ) || false
+
       res.json(
         new AppSuccess({
           message: 'Kiểm tra trạng thái chặn',
           data: { isBlocked }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async updateSettings(
+    req: Request<any, any, UpdateSettingsDTO>,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const userId = req.context?.user?._id
+      const { language, theme } = req.body
+
+      // Tìm hoặc tạo settings cho user
+      let settings = await SettingsModel.findOne({ userId })
+      if (!settings) {
+        settings = await SettingsModel.create({ userId })
+      }
+
+      // Cập nhật preferences
+      if (language) {
+        settings.preferences.language = language
+      }
+      
+      if (theme) {
+        settings.preferences.theme = theme
+      }
+
+      await settings.save()
+
+      res.json(
+        new AppSuccess({
+          message: 'Settings updated successfully',
+          data: {
+            preferences: settings.preferences
+          }
+        })
+      )
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async getSettings(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.context?.user?._id
+
+      // Tìm settings của user
+      let settings = await SettingsModel.findOne({ userId })
+      
+      // Nếu không có settings, tạo mới với giá trị mặc định
+      if (!settings) {
+        settings = await SettingsModel.create({ userId })
+      }
+
+      res.json(
+        new AppSuccess({
+          message: 'Settings retrieved successfully',
+          data: {
+            preferences: settings.preferences,
+            privacy: settings.privacy
+          }
         })
       )
     } catch (error) {

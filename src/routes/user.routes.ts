@@ -2,10 +2,7 @@ import { Router } from 'express'
 import userController from '~/controllers/user.controller'
 import { wrapRequestHandler } from '~/helpers/handler'
 import { accessTokenValidator, verifiedUserValidator } from '~/middlewares/auth.middleware'
-import {
-  sendFriendRequestValidator,
-  updateMyProfileValidator
-} from '~/middlewares/user.middlewares'
+import { updateMyProfileValidator, updateSettingsValidator } from '~/middlewares/user.middlewares'
 
 const userRoutes = Router()
 
@@ -33,14 +30,6 @@ userRoutes.get(
   userController.getBlockedUsers
 )
 
-// Get user by ID
-userRoutes.get(
-  '/:userId',
-  accessTokenValidator,
-  verifiedUserValidator,
-  wrapRequestHandler(userController.getUserById)
-)
-
 // Get user by username
 userRoutes.get(
   '/profile/:username',
@@ -55,6 +44,36 @@ userRoutes.post('/block', accessTokenValidator, verifiedUserValidator, userContr
 userRoutes.post('/unblock', accessTokenValidator, verifiedUserValidator, userController.unblockUser)
 
 // Kiểm tra xem người dùng hiện tại có bị chặn bởi người dùng khác không
-userRoutes.get('/is-blocked-by/:userId', accessTokenValidator, verifiedUserValidator, userController.isBlockedByUser)
+userRoutes.get(
+  '/is-blocked-by/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  userController.isBlockedByUser
+)
+
+// Update settings
+userRoutes.patch(
+  '/settings',
+  accessTokenValidator,
+  verifiedUserValidator,
+  updateSettingsValidator,
+  wrapRequestHandler(userController.updateSettings)
+)
+
+// Get settings
+userRoutes.get(
+  '/settings',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(userController.getSettings)
+)
+
+// Get user by ID
+userRoutes.get(
+  '/:userId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(userController.getUserById)
+)
 
 export default userRoutes

@@ -3,43 +3,67 @@ import notificationService from '~/services/notification.service'
 import { AppSuccess } from '~/models/success.model'
 import { AppError } from '~/models/error.model'
 import { IUser } from '~/models/user.model'
+import NotificationModel from '~/models/notification.model'
+import { NOTIFICATION_TYPE } from '~/constants/enums'
 
 class NotificationController {
   async getNotifications(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = req.context?.user?._id;
-      const { page = 1, limit = 10, type } = req.query;
-      
+      const userId = req.context?.user?._id
+      const { page = 1, limit = 10, filter = 'all', excludeTypes } = req.query
+
+      // Parse pagination parameters
+      const pageNumber = parseInt(page as string)
+      const limitNumber = parseInt(limit as string)
+      const skip = (pageNumber - 1) * limitNumber
+
       // Xây dựng query
-      const query: any = { 
+      const query: any = {
         userId,
         deleted: { $ne: true } // Chỉ lấy những thông báo chưa bị xóa
-      };
-      
-      if (type) {
-        query.type = type;
       }
-      
+
+      // Xử lý filter
+      if (filter === 'unread') {
+        query.read = false
+      }
+
+      // Xử lý excludeTypes
+      if (excludeTypes) {
+        const typesToExclude = (excludeTypes as string).split(',')
+        query.type = { $nin: typesToExclude }
+      }
+
+      // Đếm tổng số thông báo
+      const total = await NotificationModel.countDocuments(query)
+
       // Thực hiện query với pagination
-      const options = {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-        sort: { createdAt: -1 },
-        populate: [
-          { path: 'senderId', select: 'name avatar' }
-        ]
-      };
-      
-      const notifications = await NotificationModel.paginate(query, options);
-      
+      const notifications = await NotificationModel.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNumber)
+        .populate('senderId', 'name avatar')
+
+      // Tính toán thông tin phân trang
+      const totalPages = Math.ceil(total / limitNumber)
+      const hasMore = pageNumber < totalPages
+
+      // Cấu trúc kết quả theo đúng format mà client đang sử dụng
+      const result = {
+        notifications,
+        hasMore,
+        totalPages,
+        currentPage: pageNumber
+      }
+
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách thông báo thành công',
-          data: notifications
+          data: result
         })
-      );
+      )
     } catch (error) {
-      next(error);
+      next(error)
     }
   }
 
@@ -66,37 +90,34 @@ class NotificationController {
 
   async deleteNotification(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = req.context?.user?._id;
-      const { notificationId } = req.params;
+      const userId = req.context?.user?._id
+      const { notificationId } = req.params
 
       // Tìm thông báo
       const notification = await NotificationModel.findOne({
         _id: notificationId,
         userId
-      });
+      })
 
       if (!notification) {
         throw new AppError({
           message: 'Không tìm thấy thông báo',
           status: 404
-        });
+        })
       }
 
       // Thay vì xóa hoàn toàn, đánh dấu là đã xóa
-      notification.deleted = true;
-      await notification.save();
-
-      // Hoặc nếu muốn xóa hoàn toàn
-      // await NotificationModel.findByIdAndDelete(notificationId);
+      notification.deleted = true
+      await notification.save()
 
       res.json(
         new AppSuccess({
           message: 'Đã xóa thông báo',
           data: { notificationId }
         })
-      );
+      )
     } catch (error) {
-      next(error);
+      next(error)
     }
   }
 }

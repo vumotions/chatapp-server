@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import { ZodIssue, ZodIssueCode } from 'zod'
 import validate from '~/helpers/validation'
 import { UnprocessableEntityError } from '~/models/error.model'
@@ -72,7 +71,7 @@ export const updateMyProfileValidator = async (req: Request, res: Response, next
   if (Object.keys(errors).length > 0) {
     next(
       new UnprocessableEntityError({
-        message: status['422_NAME'],
+        message: 'Unprocessable Entity', // 422_NAME
         errors
       })
     )

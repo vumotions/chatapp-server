@@ -101,5 +101,3 @@ export const checkUserCanSendMessage = async (socket: Socket, chatId: string): P
     return false
   }
 }
-
-

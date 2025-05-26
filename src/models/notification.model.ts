@@ -8,6 +8,7 @@ export interface INotification extends Document {
   relatedId: ObjectId
   read: boolean
   processed: boolean
+  deleted?: boolean
   metadata?: {
     chatId?: string
     chatName?: string

@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import mongoose from 'mongoose'
 import ChatModel from '~/models/chat.model'
 import DraftModel from '~/models/draft.model'
@@ -15,7 +14,7 @@ class DraftsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401, // UNAUTHORIZED
             message: 'User ID is required'
           })
         )
@@ -65,7 +64,6 @@ class DraftsController {
         })
       )
     } catch (error) {
-      console.error('Error in getAllDrafts:', error)
       next(error)
     }
   }
@@ -79,7 +77,7 @@ class DraftsController {
       if (!userId) {
         next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401, // UNAUTHORIZED
             message: 'User ID is required'
           })
         )
@@ -90,7 +88,7 @@ class DraftsController {
       if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400, // BAD_REQUEST
             message: 'Invalid conversation ID'
           })
         )
@@ -120,7 +118,6 @@ class DraftsController {
         })
       )
     } catch (error) {
-      console.error('Error in getDraftByChatId:', error)
       next(error)
     }
   }
@@ -134,7 +131,7 @@ class DraftsController {
       if (!userId) {
         next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401, // UNAUTHORIZED
             message: 'User ID is required'
           })
         )
@@ -145,7 +142,7 @@ class DraftsController {
       if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400, // BAD_REQUEST
             message: 'Invalid conversation ID'
           })
         )
@@ -157,7 +154,7 @@ class DraftsController {
       if (!chat) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404, // NOT_FOUND
             message: 'Conversation not found'
           })
         )
@@ -168,7 +165,7 @@ class DraftsController {
       if (!chat.participants.some(participantId => participantId.toString() === userId.toString())) {
         next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403, // FORBIDDEN
             message: 'You are not a participant of this conversation'
           })
         )
@@ -200,7 +197,6 @@ class DraftsController {
         })
       )
     } catch (error) {
-      console.error('Error in saveDraft:', error)
       next(error)
     }
   }
@@ -214,7 +210,7 @@ class DraftsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401, // UNAUTHORIZED
             message: 'User ID is required'
           })
         )
@@ -224,7 +220,7 @@ class DraftsController {
       if (!draftId || !mongoose.Types.ObjectId.isValid(draftId)) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400, // BAD_REQUEST
             message: 'Invalid draft ID'
           })
         )
@@ -236,7 +232,7 @@ class DraftsController {
       if (!draft) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404, // NOT_FOUND
             message: 'Draft not found'
           })
         )
@@ -249,13 +245,14 @@ class DraftsController {
         })
       )
     } catch (error) {
-      console.error('Error in deleteDraft:', error)
       next(error)
     }
   }
 }
 
 export default new DraftsController()
+
+
 
 
 

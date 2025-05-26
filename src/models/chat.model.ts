@@ -1,5 +1,5 @@
 import { Document, model, Schema } from 'mongoose'
-import { nanoid } from 'nanoid'
+import { v4 } from 'uuid'
 import { CHAT_TYPE, GROUP_TYPE, MEMBER_ROLE } from '~/constants/enums'
 
 export interface IChatMember {
@@ -30,7 +30,7 @@ export interface IChat extends Document {
   archived: boolean // Giữ lại để tương thích ngược
   archivedFor: Schema.Types.ObjectId[] // Mảng archivedFor để ẩn cuộc trò chuyện
   deletedMessagesFor: Array<{
-    userId: Schema.Types.ObjectId,
+    userId: Schema.Types.ObjectId
     deletedAt: Date
   }>
   inviteLink?: string
@@ -199,7 +199,7 @@ const chatSchema = new Schema<IChat>(
     ],
     inviteLink: {
       type: String,
-      default: () => nanoid(10)
+      default: () => v4().substring(0, 10)
     },
     requireApproval: {
       type: Boolean,

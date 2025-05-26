@@ -1,5 +1,4 @@
 import type { Server as HttpServer } from 'http'
-import status from 'http-status'
 import { ObjectId, Schema, Types } from 'mongoose'
 import { Server } from 'socket.io'
 import { env } from '~/config/env'
@@ -9,11 +8,11 @@ import ChatModel from '~/models/chat.model'
 import { AppError } from '~/models/error.model'
 import MessageModel from '~/models/message.model'
 import NotificationModel from '~/models/notification.model'
+import SettingsModel from '~/models/settings.model'
 import UserModel from '~/models/user.model'
 import jwtService from '~/services/jwt.service'
 import { TokenPayload } from '~/types/payload.type'
 import { checkUserCanSendMessage } from './socket-helpers'
-import SettingsModel from '~/models/settings.model'
 
 export let io: Server
 // Lưu trữ mapping giữa userId và socketId
@@ -56,7 +55,7 @@ const initSocket = async (server: HttpServer) => {
       if (!accessToken) {
         throw new AppError({
           message: 'Missing access token',
-          status: status.UNAUTHORIZED
+          status: 401 // UNAUTHORIZED
         })
       }
 
@@ -70,7 +69,7 @@ const initSocket = async (server: HttpServer) => {
       if (verify !== USER_VERIFY_STATUS.VERIFIED) {
         throw new AppError({
           message: 'Account has not verified yet',
-          status: status.FORBIDDEN
+          status: 403 // FORBIDDEN
         })
       }
 
@@ -82,8 +81,8 @@ const initSocket = async (server: HttpServer) => {
     } catch (error) {
       console.error('Socket authentication error:', error)
       next({
-        message: status[401],
-        name: status['401_NAME'],
+        message: 'Unauthorized', // status[401]
+        name: 'Unauthorized', // status['401_NAME']
         data: error
       })
     }
@@ -120,20 +119,24 @@ const initSocket = async (server: HttpServer) => {
             return next()
           }
 
-          // Kiểm tra xem người dùng có bị chặn không
+          // Kiểm tra xem người dùng hiện tại có bị chặn bởi người dùng kia không
           const otherUserSettings = await SettingsModel.findOne({ userId: otherUserId })
           if (
             otherUserSettings &&
-            otherUserSettings.security.blockedUsers.some((id) => id.toString() === userId)
+            otherUserSettings.security.blockedUsers &&
+            otherUserSettings.security.blockedUsers.some((id: any) => id.toString() === userId)
           ) {
             return next(new Error('USER_BLOCKED'))
           }
 
-          // Kiểm tra xem người dùng có chặn người khác không
-          const userSettings = await SettingsModel.findOne({ userId })
+          // Kiểm tra xem người dùng hiện tại có chặn người dùng kia không
+          const currentUserSettings = await SettingsModel.findOne({ userId })
           if (
-            userSettings &&
-            userSettings.security.blockedUsers.some((id) => id.toString() === otherUserId)
+            currentUserSettings &&
+            currentUserSettings.security.blockedUsers &&
+            currentUserSettings.security.blockedUsers.some(
+              (id: any) => id.toString() === otherUserId
+            )
           ) {
             return next(new Error('USER_BLOCKING'))
           }
@@ -144,7 +147,6 @@ const initSocket = async (server: HttpServer) => {
           next(error)
         }
       } else {
-        // Các sự kiện khác không cần kiểm tra
         next()
       }
     })
@@ -711,7 +713,7 @@ const initSocket = async (server: HttpServer) => {
 
     socket.on('error', (error) => {
       console.error('Socket error:', error)
-      if (error.message === status['401_NAME']) {
+      if (error.message === 'Unauthorized') {
         socket.disconnect()
       }
     })
@@ -758,14 +760,14 @@ const initSocket = async (server: HttpServer) => {
 
           chat.lastMessage = lastMessage ? (lastMessage._id as Schema.Types.ObjectId) : undefined
           await chat.save()
-          
+
           // Thêm đoạn này để thông báo cập nhật lastMessage
           if (lastMessage) {
             // Populate thông tin người gửi để client hiển thị đúng
             const populatedMessage = await MessageModel.findById(lastMessage._id)
               .populate('senderId', 'name avatar username')
               .lean()
-            
+
             io.to(chatId).emit('LAST_MESSAGE_UPDATED', {
               chatId,
               lastMessage: populatedMessage

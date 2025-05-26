@@ -44,7 +44,7 @@ postsRoutes.get(
   '/comments',
   accessTokenValidator,
   verifiedUserValidator,
-  wrapRequestHandler(postController.getPostComments)
+  wrapRequestHandler(postController.getComments)
 )
 
 // Create a comment

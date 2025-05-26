@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import validate from '~/helpers/validation'
 import { AppError } from '~/models/error.model'
@@ -57,7 +56,7 @@ export const verifiedUserValidator = async (req: Request, res: Response, next: N
       new AppError({
         message:
           'Your account is not verified yet. Please check your inbox to complete the verification process',
-        status: status.FORBIDDEN,
+        status: 403,
         name: 'UNVERIFIED_ACCOUNT_ERROR'
       })
     )

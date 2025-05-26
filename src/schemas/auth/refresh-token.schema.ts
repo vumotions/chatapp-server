@@ -1,4 +1,3 @@
-import status from 'http-status'
 import z from 'zod'
 import { env } from '~/config/env'
 import { AppError } from '~/models/error.model'
@@ -16,7 +15,7 @@ export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data) =
   if (!refreshToken) {
     throw new AppError({
       message: 'Refresh token is invalid',
-      status: status.UNAUTHORIZED,
+      status: 401, // UNAUTHORIZED
       name: 'INVALID_REFRESH_TOKEN_ERROR'
     })
   }
@@ -35,7 +34,7 @@ export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data) =
     if (!foundRefreshToken) {
       throw new AppError({
         message: 'Refresh token does not exist',
-        status: status.UNAUTHORIZED
+        status: 401, // UNAUTHORIZED
       })
     }
 
@@ -48,7 +47,7 @@ export const refreshTokenSchema = rawRefreshTokenSchema.transform(async (data) =
   } catch (error) {
     throw new AppError({
       message: 'Invalid or expired refresh token',
-      status: status.UNAUTHORIZED,
+      status: 401, // UNAUTHORIZED
       name: 'REFRESH_TOKEN_EXPIRED_ERROR'
     })
   }

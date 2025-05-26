@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import { omit } from 'lodash'
 import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { AppError } from '~/models/error.model'
@@ -64,7 +63,7 @@ class AuthController {
       next(
         new AppError({
           message: 'Missing required fields',
-          status: status.NOT_FOUND
+          status: 404
         })
       )
     }

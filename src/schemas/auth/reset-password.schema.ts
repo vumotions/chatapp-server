@@ -1,4 +1,3 @@
-import status from 'http-status'
 import z from 'zod'
 import { OTP_PURPOSE } from '~/constants/enums'
 import { AppError } from '~/models/error.model'
@@ -26,7 +25,7 @@ export const resetPasswordSchema = rawResetPasswordSchema.transform(async (data)
   if (!otpRecord || (otpRecord && !otpRecord.verify)) {
     throw new AppError({
       message: 'An error occurred. Please try resending the OTP',
-      status: status.BAD_REQUEST,
+      status: 400,
       name: 'RESET_PASSWORD_ERROR'
     })
   }

@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import { omit } from 'lodash'
 import { AppError } from '~/models/error.model'
 import { AppSuccess } from '~/models/success.model'
@@ -49,7 +48,7 @@ class UsersController {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       next(
         new AppError({
-          status: status.BAD_REQUEST,
+          status: 400, // BAD_REQUEST
           message: 'Invalid user ID format'
         })
       )
@@ -62,7 +61,7 @@ class UsersController {
       if (!user) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404, // NOT_FOUND
             message: 'User not found'
           })
         )
@@ -96,7 +95,7 @@ class UsersController {
       if (!user) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404, // NOT_FOUND
             message: 'User not found'
           })
         )

@@ -1,7 +1,6 @@
+import { v4 } from 'uuid'
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import mongoose, { Schema, Types } from 'mongoose'
-import { nanoid } from 'nanoid'
 import { env } from '~/config/env'
 import {
   CHAT_TYPE,
@@ -35,7 +34,7 @@ class ConversationsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401,
             message: 'User ID is required'
           })
         )
@@ -171,7 +170,7 @@ class ConversationsController {
       if (!conversationId) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Conversation ID is required'
           })
         )
@@ -182,7 +181,7 @@ class ConversationsController {
       if (!mongoose.Types.ObjectId.isValid(conversationId)) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Invalid conversation ID'
           })
         )
@@ -202,12 +201,12 @@ class ConversationsController {
 
       // Kiểm tra xem người dùng có xóa lịch sử tin nhắn không
       const deletedMessagesRecord = conversation?.deletedMessagesFor?.find(
-        record => record.userId.toString() === userId?.toString()
+        (record) => record.userId.toString() === userId?.toString()
       )
 
       // Tạo query để lấy tin nhắn
       let messageQuery: any = { chatId: conversationId }
-      
+
       // Nếu người dùng đã xóa lịch sử, chỉ lấy tin nhắn sau thời điểm xóa
       if (deletedMessagesRecord) {
         messageQuery = {
@@ -256,7 +255,7 @@ class ConversationsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401,
             message: 'User ID is required'
           })
         )
@@ -265,7 +264,7 @@ class ConversationsController {
       if (!participants || !Array.isArray(participants) || participants.length === 0) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Participants are required'
           })
         )
@@ -411,7 +410,7 @@ class ConversationsController {
       if (!message) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy tin nhắn'
           })
         )
@@ -424,7 +423,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
@@ -459,7 +458,7 @@ class ConversationsController {
         if (!canDeleteOthersMessages) {
           return next(
             new AppError({
-              status: status.FORBIDDEN,
+              status: 403,
               message: 'Bạn không có quyền xóa tin nhắn này'
             })
           )
@@ -528,7 +527,7 @@ class ConversationsController {
       if (!messageId) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Message ID is required'
           })
         )
@@ -537,7 +536,7 @@ class ConversationsController {
       if (!content || content.trim() === '') {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Content is required'
           })
         )
@@ -550,7 +549,7 @@ class ConversationsController {
       if (!message) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Message not found'
           })
         )
@@ -560,7 +559,7 @@ class ConversationsController {
       if (message.senderId.toString() !== userId?.toString()) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to edit this message'
           })
         )
@@ -570,7 +569,7 @@ class ConversationsController {
       if (message.type !== 'TEXT') {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Only text messages can be edited'
           })
         )
@@ -624,7 +623,7 @@ class ConversationsController {
       if (!chatId || !messageId) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Chat ID and Message ID are required'
           })
         )
@@ -661,7 +660,7 @@ class ConversationsController {
       } else {
         return next(
           new AppError({
-            status: status.INTERNAL_SERVER_ERROR,
+            status: 500,
             message: 'Socket.io instance not available'
           })
         )
@@ -683,7 +682,7 @@ class ConversationsController {
       if (!userId) {
         next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401,
             message: 'Unauthorized'
           })
         )
@@ -694,7 +693,7 @@ class ConversationsController {
       if (!conversation) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -709,7 +708,7 @@ class ConversationsController {
       ) {
         next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a participant in this conversation'
           })
         )
@@ -728,7 +727,7 @@ class ConversationsController {
         if (!isOwner) {
           next(
             new AppError({
-              status: status.FORBIDDEN,
+              status: 403,
               message: 'Chỉ chủ nhóm mới có thể xóa hoàn toàn nhóm chat'
             })
           )
@@ -801,7 +800,7 @@ class ConversationsController {
       if (!conversationId) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Conversation ID is required'
           })
         )
@@ -811,7 +810,7 @@ class ConversationsController {
       if (!mongoose.Types.ObjectId.isValid(conversationId)) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Invalid conversation ID'
           })
         )
@@ -837,7 +836,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -869,7 +868,7 @@ class ConversationsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401,
             message: 'User ID is required'
           })
         )
@@ -954,7 +953,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -982,7 +981,7 @@ class ConversationsController {
         console.error('Failed to update conversation')
         return next(
           new AppError({
-            status: status.INTERNAL_SERVER_ERROR,
+            status: 500,
             message: 'Failed to archive conversation'
           })
         )
@@ -1028,7 +1027,7 @@ class ConversationsController {
       if (!conversationId) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Conversation ID is required'
           })
         )
@@ -1038,7 +1037,7 @@ class ConversationsController {
       if (!mongoose.Types.ObjectId.isValid(conversationId)) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Invalid conversation ID'
           })
         )
@@ -1061,7 +1060,7 @@ class ConversationsController {
       if (!updatedConversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -1098,7 +1097,7 @@ class ConversationsController {
       if (!message) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Message not found'
           })
         )
@@ -1113,7 +1112,7 @@ class ConversationsController {
       if (!chat) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to pin this message'
           })
         )
@@ -1153,7 +1152,7 @@ class ConversationsController {
       if (!member) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
           })
         )
@@ -1177,7 +1176,7 @@ class ConversationsController {
       if (!canPinMessage) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không có quyền ghim/bỏ ghim tin nhắn này'
           })
         )
@@ -1223,7 +1222,7 @@ class ConversationsController {
       if (!chat) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a participant in this conversation'
           })
         )
@@ -1231,24 +1230,24 @@ class ConversationsController {
 
       // Kiểm tra xem người dùng đã xóa lịch sử chưa
       const deletedMessagesRecord = chat.deletedMessagesFor?.find(
-        record => record.userId.toString() === userId?.toString()
-      );
+        (record) => record.userId.toString() === userId?.toString()
+      )
 
       // Tạo query để lấy tin nhắn đã ghim
       let pinnedMessagesQuery: any = {
         chatId,
         isPinned: true
-      };
+      }
 
       // Nếu người dùng đã xóa lịch sử, chỉ lấy tin nhắn sau thời điểm xóa
       if (deletedMessagesRecord) {
-        pinnedMessagesQuery.createdAt = { $gt: deletedMessagesRecord.deletedAt };
+        pinnedMessagesQuery.createdAt = { $gt: deletedMessagesRecord.deletedAt }
       }
 
       // Lấy tin nhắn đã ghim và sắp xếp theo thời gian mới nhất
       const pinnedMessages = await MessageModel.find(pinnedMessagesQuery)
         .populate('senderId', 'name avatar username')
-        .sort({ createdAt: -1 }); // Sắp xếp theo thời gian mới nhất
+        .sort({ createdAt: -1 }) // Sắp xếp theo thời gian mới nhất
 
       res.json(
         new AppSuccess({
@@ -1540,7 +1539,7 @@ class ConversationsController {
       }
 
       // Tạo link mời mới
-      const newInviteLink = nanoid(10)
+      const newInviteLink = v4().substring(0, 10)
       conversation.inviteLink = newInviteLink
       await conversation.save()
 
@@ -1880,7 +1879,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -1894,7 +1893,7 @@ class ConversationsController {
       if (!currentMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this conversation'
           })
         )
@@ -1908,7 +1907,7 @@ class ConversationsController {
       if (!canApprove) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to approve join requests'
           })
         )
@@ -2030,7 +2029,7 @@ class ConversationsController {
       if (!updatedConversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found after update'
           })
         )
@@ -2090,7 +2089,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -2104,7 +2103,7 @@ class ConversationsController {
       if (!currentMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this conversation'
           })
         )
@@ -2119,7 +2118,7 @@ class ConversationsController {
       if (!canReject) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to reject join requests'
           })
         )
@@ -2201,7 +2200,7 @@ class ConversationsController {
       if (!conversationId || !memberIdToRemove) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Conversation ID and Member ID are required'
           })
         )
@@ -2214,7 +2213,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -2228,7 +2227,7 @@ class ConversationsController {
       if (!currentMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this group'
           })
         )
@@ -2241,7 +2240,7 @@ class ConversationsController {
       if (!canRemoveMembers) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to remove members from this group'
           })
         )
@@ -2251,7 +2250,7 @@ class ConversationsController {
       if (memberIdToRemove === currentUserId?.toString()) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Cannot remove yourself from the group. Use the leave group function instead.'
           })
         )
@@ -2265,7 +2264,7 @@ class ConversationsController {
       if (memberToRemove?.role === MEMBER_ROLE.OWNER && !isOwner) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Admins cannot remove the group owner'
           })
         )
@@ -2275,7 +2274,7 @@ class ConversationsController {
       if (memberToRemove?.role === MEMBER_ROLE.ADMIN && !isOwner) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Admins cannot remove other admins'
           })
         )
@@ -2289,7 +2288,7 @@ class ConversationsController {
       if (!isMember) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'User is not a member of this group'
           })
         )
@@ -2356,7 +2355,7 @@ class ConversationsController {
       if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'User IDs are required and must be an array'
           })
         )
@@ -2369,7 +2368,7 @@ class ConversationsController {
       if (!conversation) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -2384,7 +2383,7 @@ class ConversationsController {
       if (!currentMember) {
         next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this group'
           })
         )
@@ -2398,7 +2397,7 @@ class ConversationsController {
       if (!canInvite) {
         next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to add members to this group'
           })
         )
@@ -2410,7 +2409,7 @@ class ConversationsController {
       if (conversation.participants.length + userIds.length > MAX_GROUP_MEMBERS) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: `Group cannot have more than ${MAX_GROUP_MEMBERS} members`
           })
         )
@@ -2766,7 +2765,7 @@ class ConversationsController {
 
       if (!conversation) {
         throw new AppError({
-          status: status.NOT_FOUND,
+          status: 404,
           message: 'Cuộc trò chuyện không tồn tại hoặc đã bị xóa'
         })
       }
@@ -2778,7 +2777,7 @@ class ConversationsController {
 
       if (!isParticipant) {
         throw new AppError({
-          status: status.FORBIDDEN,
+          status: 403,
           message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
         })
       }
@@ -2809,7 +2808,7 @@ class ConversationsController {
       if (!newOwnerId) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Vui lòng chọn thành viên để chuyển quyền chủ nhóm'
           })
         )
@@ -2820,7 +2819,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
@@ -2834,7 +2833,7 @@ class ConversationsController {
       if (!isOwner) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Chỉ chủ nhóm mới có thể chuyển quyền chủ nhóm'
           })
         )
@@ -2848,7 +2847,7 @@ class ConversationsController {
       if (!isNewOwnerMember) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Người được chọn không phải là thành viên của nhóm'
           })
         )
@@ -3141,7 +3140,7 @@ class ConversationsController {
       if (!conversationId || !memberIdToMute) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Conversation ID and Member ID are required'
           })
         )
@@ -3154,7 +3153,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -3168,7 +3167,7 @@ class ConversationsController {
       if (!currentMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this group'
           })
         )
@@ -3181,7 +3180,7 @@ class ConversationsController {
       if (!canBanUsers) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to mute members in this group'
           })
         )
@@ -3191,7 +3190,7 @@ class ConversationsController {
       if (memberIdToMute === currentUserId?.toString()) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Cannot mute yourself'
           })
         )
@@ -3205,7 +3204,7 @@ class ConversationsController {
       if (!memberToMute) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'User is not a member of this group'
           })
         )
@@ -3214,7 +3213,7 @@ class ConversationsController {
       if (memberToMute.role === MEMBER_ROLE.OWNER) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Cannot mute the group owner'
           })
         )
@@ -3224,7 +3223,7 @@ class ConversationsController {
       if (memberToMute.role === MEMBER_ROLE.ADMIN && !isOwner) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Admins cannot mute other admins'
           })
         )
@@ -3308,7 +3307,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -3322,7 +3321,7 @@ class ConversationsController {
       if (!currentMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this group'
           })
         )
@@ -3335,7 +3334,7 @@ class ConversationsController {
       if (!canBanUsers) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You do not have permission to unmute members in this group'
           })
         )
@@ -3401,7 +3400,7 @@ class ConversationsController {
       if (!chatId) {
         next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Chat ID is required'
           })
         )
@@ -3413,7 +3412,7 @@ class ConversationsController {
       if (!conversation) {
         next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -3428,7 +3427,7 @@ class ConversationsController {
       if (!isMember) {
         next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'You are not a member of this conversation'
           })
         )
@@ -3497,7 +3496,7 @@ class ConversationsController {
       if (!requestStatus || !['PENDING', 'APPROVED', 'REJECTED'].includes(requestStatus)) {
         return next(
           new AppError({
-            status: status.BAD_REQUEST,
+            status: 400,
             message: 'Trạng thái không hợp lệ'
           })
         )
@@ -3508,7 +3507,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
@@ -3522,7 +3521,7 @@ class ConversationsController {
       if (!member) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không phải là thành viên của nhóm này'
           })
         )
@@ -3535,7 +3534,7 @@ class ConversationsController {
       if (!canManageRequests) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không có quyền thực hiện hành động này'
           })
         )
@@ -3590,7 +3589,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
@@ -3601,7 +3600,7 @@ class ConversationsController {
       if (!member) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không phải là thành viên của nhóm này'
           })
         )
@@ -3612,7 +3611,7 @@ class ConversationsController {
       if (!isOwner) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Chỉ chủ nhóm mới có quyền thay đổi cài đặt này'
           })
         )
@@ -3702,7 +3701,7 @@ class ConversationsController {
       if (!chat) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Không tìm thấy cuộc trò chuyện'
           })
         )
@@ -3713,7 +3712,7 @@ class ConversationsController {
       if (!isMember) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Bạn không phải là thành viên của cuộc trò chuyện này'
           })
         )
@@ -3724,7 +3723,7 @@ class ConversationsController {
       if (!member) {
         return next(
           new AppError({
-            status: status.FORBIDDEN,
+            status: 403,
             message: 'Không tìm thấy thông tin thành viên'
           })
         )
@@ -3799,7 +3798,7 @@ class ConversationsController {
       if (!userId) {
         return next(
           new AppError({
-            status: status.UNAUTHORIZED,
+            status: 401,
             message: 'Unauthorized'
           })
         )
@@ -3814,7 +3813,7 @@ class ConversationsController {
       if (!conversation) {
         return next(
           new AppError({
-            status: status.NOT_FOUND,
+            status: 404,
             message: 'Conversation not found'
           })
         )
@@ -3823,7 +3822,7 @@ class ConversationsController {
       // Xóa bản ghi cũ nếu có
       await ChatModel.findByIdAndUpdate(conversationId, {
         $pull: { deletedMessagesFor: { userId } }
-      });
+      })
 
       // Thêm bản ghi mới
       await ChatModel.findByIdAndUpdate(conversationId, {
@@ -3833,7 +3832,7 @@ class ConversationsController {
             deletedAt: new Date()
           }
         }
-      });
+      })
 
       // Tạo tin nhắn hệ thống mới
       const systemMessage = await MessageModel.create({
@@ -3842,31 +3841,31 @@ class ConversationsController {
         content: 'Bạn đã xóa lịch sử tin nhắn',
         type: MESSAGE_TYPE.SYSTEM,
         status: MESSAGE_STATUS.DELIVERED
-      });
+      })
 
       // Cập nhật lastMessage thành tin nhắn hệ thống mới
       await ChatModel.findByIdAndUpdate(conversationId, {
         lastMessage: systemMessage._id
-      });
+      })
 
       // Lấy thông tin đầy đủ của tin nhắn hệ thống để trả về
       const populatedSystemMessage = await MessageModel.findById(systemMessage._id)
         .populate('senderId', 'name avatar')
-        .lean();
+        .lean()
 
       // Sử dụng socket để cập nhật real-time
-      const io = req.app.get('io');
+      const io = req.app.get('io')
       if (io) {
         // Emit sự kiện cập nhật lastMessage
         emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.LAST_MESSAGE_UPDATED, {
           conversationId,
           lastMessage: populatedSystemMessage
-        });
+        })
       }
 
       res.json(
         new AppSuccess({
-          data: { 
+          data: {
             conversationId,
             systemMessage: populatedSystemMessage
           },

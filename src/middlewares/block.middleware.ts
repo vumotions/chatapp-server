@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
 import mongoose from 'mongoose'
 import { AppError } from '~/models/error.model'
 import SettingsModel from '~/models/settings.model'
@@ -17,7 +16,7 @@ export const checkBlockedByUserMiddleware = (userIdParamName = 'userId') => {
         return next(
           new AppError({
             message: 'Unauthorized',
-            status: status.UNAUTHORIZED
+            status: 401
           })
         )
       }
@@ -41,7 +40,7 @@ export const checkBlockedByUserMiddleware = (userIdParamName = 'userId') => {
         return next(
           new AppError({
             message: 'Bạn không thể thực hiện hành động này vì đã bị người dùng chặn',
-            status: status.FORBIDDEN,
+            status: 403,
             name: 'USER_BLOCKED_ERROR'
           })
         )
@@ -66,7 +65,7 @@ export const checkBlockingUserMiddleware = (userIdParamName = 'userId') => {
         return next(
           new AppError({
             message: 'Unauthorized',
-            status: status.UNAUTHORIZED
+            status: 401
           })
         )
       }
@@ -90,7 +89,7 @@ export const checkBlockingUserMiddleware = (userIdParamName = 'userId') => {
         return next(
           new AppError({
             message: 'Bạn không thể thực hiện hành động này vì đã chặn người dùng này',
-            status: status.FORBIDDEN,
+            status: 403,
             name: 'USER_BLOCKING_ERROR'
           })
         )

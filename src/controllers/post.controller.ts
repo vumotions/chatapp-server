@@ -1,18 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextFunction, Request, Response } from 'express'
-import status from 'http-status'
-import mongoose, { Schema, Types } from 'mongoose'
-import { nanoid } from 'nanoid'
-import { NOTIFICATION_TYPE } from '~/constants/enums'
-import { emitSocketEvent } from '~/lib/socket'
-import PostModel from '~/models/post.model'
-import NotificationModel from '~/models/notification.model'
-import { AppError } from '~/models/error.model'
-import { AppSuccess } from '~/models/success.model'
-import uploadService from '~/services/upload.service'
-import PostLikeModel from '~/models/post-like.model'
-import PostCommentModel from '~/models/post-comment.model'
+import { Request, Response } from 'express'
+import mongoose from 'mongoose'
 import CommentLikeModel from '~/models/comment-like.model'
+import NotificationModel from '~/models/notification.model'
+import PostCommentModel from '~/models/post-comment.model'
+import PostLikeModel from '~/models/post-like.model'
+import PostModel from '~/models/post.model'
+import uploadService from '~/services/upload.service'
 
 class PostController {
   async uploadeAPost(req: Request, res: Response): Promise<any> {
@@ -22,7 +16,7 @@ class PostController {
       const files = req.files as Express.Multer.File[]
 
       if (!userId) {
-        return res.status(400).json({ message: 'User ID is required' })
+        return res.status(400).json({ message: 'User ID is required' }) // BAD_REQUEST
       }
 
       // Upload files và nhận về mảng đối tượng media
@@ -45,15 +39,9 @@ class PostController {
         message: 'Post created successfully',
         data: post
       })
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating post:', error)
-
-      // Log chi tiết lỗi để debug
-      if (error.name === 'ValidationError') {
-        console.error('Validation error details:', error.errors)
-      }
-
-      return res.status(500).json({ message: error.message || 'Internal server error' })
+      return res.status(500).json({ message: 'Internal server error' }) // INTERNAL_SERVER_ERROR
     }
   }
   // Phiên bản đơn giản hơn của getPost để debug
@@ -151,63 +139,63 @@ class PostController {
 
   async getComments(req: Request, res: Response): Promise<any> {
     try {
-      const { postId, parentId, page = 1, limit = 10 } = req.query;
-      const userId = req.context?.user?._id;
-      
-      console.log(`Getting comments for post ${postId}, parentId ${parentId}, user ${userId}`);
-      
+      const { postId, parentId, page = 1, limit = 10 } = req.query
+      const userId = req.context?.user?._id
+
+      console.log(`Getting comments for post ${postId}, parentId ${parentId}, user ${userId}`)
+
       // Tạo query để lấy comments
-      const query: any = { postId };
+      const query: any = { postId }
       if (parentId) {
-        query.parentId = parentId;
+        query.parentId = parentId
       } else {
-        query.parentId = { $exists: false }; // Chỉ lấy comments gốc nếu không có parentId
+        query.parentId = { $exists: false } // Chỉ lấy comments gốc nếu không có parentId
       }
-      
+
       // Lấy comments với phân trang
-      const skip = (Number(page) - 1) * Number(limit);
+      const skip = (Number(page) - 1) * Number(limit)
       const comments = await PostCommentModel.find(query)
         .populate('userId', 'name avatar')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit));
-      
+        .limit(Number(limit))
+
       // Đếm tổng số comments
-      const total = await PostCommentModel.countDocuments(query);
-      
+      const total = await PostCommentModel.countDocuments(query)
+
       // Thêm thông tin like cho mỗi comment
       const commentsWithLikeInfo = await Promise.all(
         comments.map(async (comment) => {
           // Đếm số lượng like
-          const likesCount = await CommentLikeModel.countDocuments({ commentId: comment._id });
-          
+          const likesCount = await CommentLikeModel.countDocuments({ commentId: comment._id })
+
           // Kiểm tra xem người dùng hiện tại đã like comment này chưa
-          let userLiked = false;
+          let userLiked = false
           if (userId) {
-            const userLike = await CommentLikeModel.findOne({ 
-              commentId: comment._id, 
-              userId 
-            });
-            userLiked = !!userLike;
+            const userLike = await CommentLikeModel.findOne({
+              commentId: comment._id,
+              userId
+            })
+            userLiked = !!userLike
           }
-          
-          console.log(`Comment ${comment._id} - userLiked:`, userLiked, 'likesCount:', likesCount);
-          
+
+          console.log(`Comment ${comment._id} - userLiked:`, userLiked, 'likesCount:', likesCount)
+
           // Đếm số lượng replies nếu là comment gốc
-          let replyCount = 0;
+          let replyCount = 0
           if (!comment.parentId) {
-            replyCount = await PostCommentModel.countDocuments({ parentId: comment._id });
+            replyCount = await PostCommentModel.countDocuments({ parentId: comment._id })
           }
-          
+
           return {
             ...comment.toObject(),
             likesCount,
             userLiked,
             replyCount
-          };
+          }
         })
-      );
-      
+      )
+
       return res.status(200).json({
         message: 'Get comments successfully',
         data: commentsWithLikeInfo,
@@ -217,10 +205,10 @@ class PostController {
           total,
           totalPages: Math.ceil(total / Number(limit))
         }
-      });
+      })
     } catch (error: any) {
-      console.error('Error getting comments:', error);
-      return res.status(500).json({ message: error.message || 'Internal server error' });
+      console.error('Error getting comments:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 
@@ -509,15 +497,15 @@ class PostController {
 
       // Check if user already liked the comment
       const existingLike = await CommentLikeModel.findOne({ userId, commentId })
-      
+
       // Toggle like status
       if (existingLike) {
         // User already liked the comment, so unlike it
         await CommentLikeModel.findByIdAndDelete(existingLike._id)
-        
+
         // Get updated like count
         const likesCount = await CommentLikeModel.countDocuments({ commentId })
-        
+
         // Emit socket event for real-time likes
         const { io } = require('~/lib/socket')
         if (io) {
@@ -529,7 +517,7 @@ class PostController {
           })
           console.log(`Emitted COMMENT_LIKE_UPDATED event to room ${roomName}`)
         }
-        
+
         return res.status(200).json({
           message: 'Comment unliked successfully',
           data: { likesCount, userLiked: false }
@@ -826,44 +814,47 @@ class PostController {
 
   async getCommentReplies(req: Request, res: Response): Promise<any> {
     try {
-      const { commentId } = req.params;
-      const userId = req.context?.user?._id;
-      
-      console.log(`Getting replies for comment ${commentId}, user ${userId}`);
+      const { commentId } = req.params
+      const userId = req.context?.user?._id
+
+      console.log(`Getting replies for comment ${commentId}, user ${userId}`)
 
       // Lấy các reply của comment
       const replies = await PostCommentModel.find({ parentId: commentId })
         .populate('userId', 'name avatar')
-        .sort({ createdAt: -1 });
-      
+        .sort({ createdAt: -1 })
+
       // Lấy thông tin like của người dùng hiện tại cho mỗi reply
       const repliesWithLikeInfo = await Promise.all(
         replies.map(async (reply) => {
-          const likesCount = await CommentLikeModel.countDocuments({ commentId: reply._id });
-          
+          const likesCount = await CommentLikeModel.countDocuments({ commentId: reply._id })
+
           // Kiểm tra xem người dùng hiện tại đã like reply này chưa
-          let userLiked = false;
+          let userLiked = false
           if (userId) {
-            const userLike = await CommentLikeModel.findOne({ commentId: reply._id, userId });
-            userLiked = !!userLike;
+            const userLike = await CommentLikeModel.findOne({ commentId: reply._id, userId })
+            userLiked = !!userLike
           }
-          
-          console.log(`Reply ${reply._id} - userLiked:`, userLiked, 'likesCount:', likesCount);
-          
+
+          console.log(`Reply ${reply._id} - userLiked:`, userLiked, 'likesCount:', likesCount)
+
           return {
             ...reply.toObject(),
             likesCount,
             userLiked
-          };
+          }
         })
-      );
-      
-      console.log('Sending replies with like info:', repliesWithLikeInfo.map(r => ({ 
-        id: r._id, 
-        userLiked: r.userLiked,
-        likesCount: r.likesCount
-      })));
-      
+      )
+
+      console.log(
+        'Sending replies with like info:',
+        repliesWithLikeInfo.map((r) => ({
+          id: r._id,
+          userLiked: r.userLiked,
+          likesCount: r.likesCount
+        }))
+      )
+
       return res.status(200).json({
         message: 'Get comment replies successfully',
         data: {
@@ -872,10 +863,10 @@ class PostController {
             total: repliesWithLikeInfo.length
           }
         }
-      });
+      })
     } catch (error: any) {
-      console.error('Error getting comment replies:', error);
-      return res.status(500).json({ message: error.message || 'Internal server error' });
+      console.error('Error getting comment replies:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
 }

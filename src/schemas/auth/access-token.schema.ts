@@ -1,4 +1,3 @@
-import status from 'http-status'
 import { omit } from 'lodash'
 import z from 'zod'
 import { env } from '~/config/env'
@@ -17,7 +16,7 @@ export const accessTokenSchema = rawAccessTokenSchema.transform(async (data) => 
     if (!accessToken?.trim()) {
       throw new AppError({
         message: 'Access token is invalid',
-        status: status.UNAUTHORIZED,
+        status: 401,
         name: 'INVALID_ACCESS_TOKEN_ERROR'
       })
     }
@@ -30,7 +29,7 @@ export const accessTokenSchema = rawAccessTokenSchema.transform(async (data) => 
     if (!user) {
       throw new AppError({
         message: 'User does not exist',
-        status: status.UNAUTHORIZED,
+        status: 401,
         name: 'USER_NOT_FOUND'
       })
     }
@@ -45,7 +44,7 @@ export const accessTokenSchema = rawAccessTokenSchema.transform(async (data) => 
   } catch (error) {
     throw new AppError({
       message: 'Invalid or expired refresh token',
-      status: status.UNAUTHORIZED,
+      status: 401,
       name: 'ACCESS_TOKEN_EXPIRED_ERROR'
     })
   }

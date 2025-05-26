@@ -1,4 +1,3 @@
-import status from 'http-status'
 import z from 'zod'
 import { AppError } from '~/models/error.model'
 import userService from '~/services/user.service'
@@ -12,7 +11,7 @@ export const sendFriendRequestSchema = rawSendFriendRequestSchema.transform(asyn
   if (!followedUser) {
     throw new AppError({
       message: 'An error occurred. Please try resending the OTP',
-      status: status.BAD_REQUEST,
+      status: 400, // BAD_REQUEST
       name: 'RESET_PASSWORD_ERROR'
     })
   }

@@ -1,4 +1,3 @@
-import status from 'http-status'
 import { ZodIssueCode } from 'zod'
 import { OTP_STATUS, USER_VERIFY_STATUS } from '~/constants/enums'
 import { getOTPErrorMessage } from '~/helpers/common'
@@ -16,14 +15,14 @@ export const confirmEmailSchema = confirmEmailOtpSchema.transform(async (data, c
   if (!user) {
     throw new AppError({
       message: 'User not found',
-      status: status.BAD_REQUEST
+      status: 400 // BAD_REQUEST
     })
   }
 
   if (user.verify === USER_VERIFY_STATUS.VERIFIED) {
     throw new AppError({
       message: 'Your email is already verified. You can now log in to your account',
-      status: status.FORBIDDEN
+      status: 403 // FORBIDDEN
     })
   }
 

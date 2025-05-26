@@ -8,7 +8,7 @@ import { TransformContext } from '~/models/transform-context.model'
 
 export const confirmResetPasswordSchema = confirmEmailOtpSchema.transform(async (data, ctx) => {
   const [otpStatus, user] = await Promise.all([
-    otpService.verifyOTP(data),
+    otpService.verifyOTP(data as any),
     userService.getUserByEmail(data.email)
   ])
 

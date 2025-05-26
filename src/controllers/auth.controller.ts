@@ -155,7 +155,7 @@ class AuthController {
     res: Response,
     next: NextFunction
   ) {
-    await userService.confirmResetPassword(req.body)
+    await userService.confirmResetPassword(req.body as any)
 
     res.json(
       new AppSuccess({
@@ -167,7 +167,7 @@ class AuthController {
 
   async resetPassword(req: Request<any, any, ResetPasswordDTO>, res: Response, next: NextFunction) {
     const { confirmPassword, ...data } = req.body
-    await userService.resetPassword(data)
+    await userService.resetPassword(data as any)
 
     res.json(
       new AppSuccess({

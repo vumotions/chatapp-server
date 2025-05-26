@@ -9,7 +9,7 @@ import { confirmEmailOtpSchema } from '../common.schema'
 
 export const confirmEmailSchema = confirmEmailOtpSchema.transform(async (data, ctx) => {
   const [otpStatus, user] = await Promise.all([
-    otpService.verifyOTP(data),
+    otpService.verifyOTP(data as any),
     userService.getUserByEmail(data.email)
   ])
   if (!user) {

@@ -2,7 +2,13 @@ import type { Server as HttpServer } from 'http'
 import { ObjectId, Schema, Types } from 'mongoose'
 import { Server } from 'socket.io'
 import { env } from '~/config/env'
-import { CHAT_TYPE, MESSAGE_STATUS, MESSAGE_TYPE, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
+import {
+  CHAT_TYPE,
+  MESSAGE_STATUS,
+  MESSAGE_TYPE,
+  NOTIFICATION_TYPE,
+  USER_VERIFY_STATUS
+} from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import ChatModel from '~/models/chat.model'
 import { AppError } from '~/models/error.model'
@@ -914,16 +920,16 @@ const initSocket = async (server: HttpServer) => {
 
     socket.on(SOCKET_EVENTS.CALL_ENDED, async (data) => {
       try {
-        const { recipientId, chatId, callType, createSystemMessage } = data;
-        console.log(`User ${userId} ended call with ${recipientId} in chat ${chatId}`);
+        const { recipientId, chatId, callType, createSystemMessage } = data
+        console.log(`User ${userId} ended call with ${recipientId} in chat ${chatId}`)
 
         // Send call ended event to recipient
-        const recipientSocketId = users.get(recipientId);
+        const recipientSocketId = users.get(recipientId)
         if (recipientSocketId) {
           io.to(recipientSocketId).emit(SOCKET_EVENTS.CALL_ENDED, {
             callerId: userId,
             chatId
-          });
+          })
         }
 
         // Create system message if requested
@@ -932,17 +938,17 @@ const initSocket = async (server: HttpServer) => {
           const [chat, user] = await Promise.all([
             ChatModel.findById(chatId),
             UserModel.findById(userId).select('name username avatar').lean()
-          ]);
+          ])
 
           if (!chat) {
-            console.error(`Chat ${chatId} not found`);
-            return;
+            console.error(`Chat ${chatId} not found`)
+            return
           }
 
           // Create appropriate message based on call type
-          const callTypeText = callType === 'VIDEO' ? 'cuộc gọi video' : 'cuộc gọi thoại';
-          const userName = user?.name || user?.username || 'Người dùng';
-          
+          const callTypeText = callType === 'VIDEO' ? 'cuộc gọi video' : 'cuộc gọi thoại'
+          const userName = user?.name || user?.username || 'Người dùng'
+
           // Create system message
           const systemMessage = await MessageModel.create({
             chatId,
@@ -950,11 +956,11 @@ const initSocket = async (server: HttpServer) => {
             content: `${userName} đã kết thúc ${callTypeText}`,
             type: MESSAGE_TYPE.SYSTEM,
             status: MESSAGE_STATUS.DELIVERED
-          });
+          })
 
           // Update chat's lastMessage
-          chat.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId;
-          await chat.save();
+          chat.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+          await chat.save()
 
           // Emit message to all users in the chat - using RECEIVE_MESSAGE event
           io.to(chatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
@@ -967,22 +973,10 @@ const initSocket = async (server: HttpServer) => {
             },
             senderName: userName,
             senderAvatar: user?.avatar
-          });
-          
-          console.log('System message emitted:', {
-            ...systemMessage.toObject(),
-            senderId: userId.toString(),
-            senderInfo: {
-              _id: userId,
-              name: userName,
-              avatar: user?.avatar
-            },
-            senderName: userName,
-            senderAvatar: user?.avatar
-          });
+          })
         }
       } catch (error) {
-        console.error('Error handling CALL_ENDED:', error);
+        console.error('Error handling CALL_ENDED:', error)
       }
     })
 
@@ -1025,41 +1019,67 @@ const initSocket = async (server: HttpServer) => {
     })
 
     // Xử lý cuộc gọi nhỡ
-    socket.on(SOCKET_EVENTS.CALL_MISSED, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_MISSED, async (data) => {
       try {
-        const { recipientId, chatId } = data
+        const { recipientId, chatId, callType } = data
         console.log(`Call from ${userId} to ${recipientId} in chat ${chatId} was missed`)
 
-        // Tạo thông báo cuộc gọi nhỡ
-        NotificationModel.create({
-          userId: recipientId,
+        // Lấy thông tin người gọi và chat
+        const [caller, chat] = await Promise.all([
+          UserModel.findById(userId).select('name username avatar').lean(),
+          ChatModel.findById(chatId)
+        ])
+
+        if (!chat) {
+          console.error(`Chat ${chatId} not found`)
+          return
+        }
+
+        const callerName = caller?.name || caller?.username || 'Người dùng'
+
+        // Tạo tin nhắn hệ thống
+        const callTypeText = callType === 'VIDEO' ? 'cuộc gọi video' : 'cuộc gọi thoại'
+        const systemMessage = await MessageModel.create({
+          chatId,
           senderId: userId,
-          type: NOTIFICATION_TYPE.MISSED_CALL,
-          relatedId: new Types.ObjectId(chatId),
-          metadata: {
-            chatId,
-            timestamp: new Date()
-          }
-        }).then((notification) => {
-          // Gửi thông báo qua socket nếu người dùng online
-          const recipientSocketId = users.get(recipientId)
-          if (recipientSocketId) {
-            UserModel.findById(userId, 'name avatar')
-              .lean()
-              .then((caller) => {
-                io.to(recipientSocketId).emit(SOCKET_EVENTS.NOTIFICATION_NEW, {
-                  ...notification.toObject(),
-                  sender: {
-                    _id: userId,
-                    name: caller?.name || 'Người dùng',
-                    avatar: caller?.avatar || null
-                  }
-                })
-              })
-          }
+          content: `${callerName} đã gọi ${callTypeText} (cuộc gọi nhỡ)`,
+          type: MESSAGE_TYPE.SYSTEM,
+          status: MESSAGE_STATUS.DELIVERED
         })
+
+        console.log('Created missed call system message:', systemMessage._id)
+
+        // Cập nhật lastMessage của chat
+        chat.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId
+        await chat.save()
+
+        // Gửi tin nhắn hệ thống đến tất cả người dùng trong chat
+        io.to(chatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
+          ...systemMessage.toObject(),
+          senderId: userId.toString(),
+          senderInfo: {
+            _id: userId,
+            name: callerName,
+            avatar: caller?.avatar
+          },
+          senderName: callerName,
+          senderAvatar: caller?.avatar
+        })
+
+        // Gửi sự kiện CALL_MISSED đến người nhận để đóng cuộc gọi
+        const recipientSocketId = users.get(recipientId)
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit(SOCKET_EVENTS.CALL_MISSED, {
+            chatId,
+            recipientId
+          })
+          console.log(`Sent CALL_MISSED event to recipient ${recipientId}`)
+        }
+
+        console.log('Missed call system message sent to room:', chatId)
       } catch (error) {
         console.error('Error handling CALL_MISSED:', error)
+        socket.emit(SOCKET_EVENTS.ERROR, { message: 'Xử lý cuộc gọi nhỡ thất bại' })
       }
     })
   })

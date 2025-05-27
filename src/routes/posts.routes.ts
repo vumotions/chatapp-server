@@ -41,7 +41,7 @@ postsRoutes.delete(
 
 // Get comments for a post
 postsRoutes.get(
-  '/comments',
+  '/:id/comments',
   accessTokenValidator,
   verifiedUserValidator,
   wrapRequestHandler(postController.getComments)
@@ -53,6 +53,21 @@ postsRoutes.post(
   accessTokenValidator,
   verifiedUserValidator,
   wrapRequestHandler(postController.createComment)
+)
+// Update a comment
+postsRoutes.patch(
+  '/comments/:id',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.updateComment)
+)
+
+// Delete a comment
+postsRoutes.delete(
+  '/comments/:id',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.deleteComment)
 )
 
 // Thêm routes cho like/unlike comment

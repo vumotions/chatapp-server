@@ -2,7 +2,7 @@ import type { Server as HttpServer } from 'http'
 import { ObjectId, Schema, Types } from 'mongoose'
 import { Server } from 'socket.io'
 import { env } from '~/config/env'
-import { CHAT_TYPE, MESSAGE_STATUS, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
+import { CHAT_TYPE, MESSAGE_STATUS, MESSAGE_TYPE, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import ChatModel from '~/models/chat.model'
 import { AppError } from '~/models/error.model'
@@ -912,20 +912,77 @@ const initSocket = async (server: HttpServer) => {
       }
     })
 
-    socket.on(SOCKET_EVENTS.CALL_ENDED, (data) => {
+    socket.on(SOCKET_EVENTS.CALL_ENDED, async (data) => {
       try {
-        const { recipientId, chatId } = data
-        console.log(`User ${userId} ended call with ${recipientId} in chat ${chatId}`)
+        const { recipientId, chatId, callType, createSystemMessage } = data;
+        console.log(`User ${userId} ended call with ${recipientId} in chat ${chatId}`);
 
-        const recipientSocketId = users.get(recipientId)
+        // Send call ended event to recipient
+        const recipientSocketId = users.get(recipientId);
         if (recipientSocketId) {
           io.to(recipientSocketId).emit(SOCKET_EVENTS.CALL_ENDED, {
             callerId: userId,
             chatId
-          })
+          });
+        }
+
+        // Create system message if requested
+        if (createSystemMessage) {
+          // Get chat and user info
+          const [chat, user] = await Promise.all([
+            ChatModel.findById(chatId),
+            UserModel.findById(userId).select('name username avatar').lean()
+          ]);
+
+          if (!chat) {
+            console.error(`Chat ${chatId} not found`);
+            return;
+          }
+
+          // Create appropriate message based on call type
+          const callTypeText = callType === 'VIDEO' ? 'cuộc gọi video' : 'cuộc gọi thoại';
+          const userName = user?.name || user?.username || 'Người dùng';
+          
+          // Create system message
+          const systemMessage = await MessageModel.create({
+            chatId,
+            senderId: userId,
+            content: `${userName} đã kết thúc ${callTypeText}`,
+            type: MESSAGE_TYPE.SYSTEM,
+            status: MESSAGE_STATUS.DELIVERED
+          });
+
+          // Update chat's lastMessage
+          chat.lastMessage = systemMessage._id as unknown as Schema.Types.ObjectId;
+          await chat.save();
+
+          // Emit message to all users in the chat - using RECEIVE_MESSAGE event
+          io.to(chatId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
+            ...systemMessage.toObject(),
+            senderId: userId.toString(),
+            senderInfo: {
+              _id: userId,
+              name: userName,
+              avatar: user?.avatar
+            },
+            senderName: userName,
+            senderAvatar: user?.avatar
+          });
+          
+          console.log('System message emitted:', {
+            ...systemMessage.toObject(),
+            senderId: userId.toString(),
+            senderInfo: {
+              _id: userId,
+              name: userName,
+              avatar: user?.avatar
+            },
+            senderName: userName,
+            senderAvatar: user?.avatar
+          });
         }
       } catch (error) {
-        console.error('Error handling CALL_ENDED:', error)
+        console.error('Error handling CALL_ENDED:', error);
       }
     })
 

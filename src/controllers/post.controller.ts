@@ -136,78 +136,127 @@ class PostController {
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
-
   async getComments(req: Request, res: Response): Promise<any> {
     try {
-      const { postId, parentId, page = 1, limit = 10 } = req.query
+      const { id } = req.params
+      const { page = '1', limit = '10' } = req.query
       const userId = req.context?.user?._id
 
-      console.log(`Getting comments for post ${postId}, parentId ${parentId}, user ${userId}`)
+      const pageNum = parseInt(page as string)
+      const limitNum = parseInt(limit as string)
 
-      // Tạo query để lấy comments
-      const query: any = { postId }
-      if (parentId) {
-        query.parentId = parentId
-      } else {
-        query.parentId = { $exists: false } // Chỉ lấy comments gốc nếu không có parentId
+      // Validate postId
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid Post ID format' })
       }
 
-      // Lấy comments với phân trang
-      const skip = (Number(page) - 1) * Number(limit)
-      const comments = await PostCommentModel.find(query)
-        .populate('userId', 'name avatar')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit))
+      const postObjectId = new mongoose.Types.ObjectId(id)
 
-      // Đếm tổng số comments
-      const total = await PostCommentModel.countDocuments(query)
+      // Check if post exists
+      const post = await PostModel.findById(postObjectId)
+      if (!post) {
+        return res.status(404).json({ message: 'Post not found' })
+      }
 
-      // Thêm thông tin like cho mỗi comment
-      const commentsWithLikeInfo = await Promise.all(
-        comments.map(async (comment) => {
-          // Đếm số lượng like
-          const likesCount = await CommentLikeModel.countDocuments({ commentId: comment._id })
+      // Fetch all comments for the post
+      const comments = await PostCommentModel.find({ postId: postObjectId })
+        .populate('userId', 'name avatar username')
+        .lean()
 
-          // Kiểm tra xem người dùng hiện tại đã like comment này chưa
-          let userLiked = false
-          if (userId) {
-            const userLike = await CommentLikeModel.findOne({
-              commentId: comment._id,
-              userId
-            })
-            userLiked = !!userLike
+      // Get all comment IDs
+      const commentIds = comments.map((comment) => comment._id)
+
+      // Fetch all likes for these comments
+      const likes = await CommentLikeModel.find({ commentId: { $in: commentIds } }).lean()
+
+      // Calculate like counts
+      const likeCounts = {}
+      likes.forEach((like) => {
+        const commentIdStr = like.commentId.toString()
+        likeCounts[commentIdStr] = (likeCounts[commentIdStr] || 0) + 1
+      })
+
+      // Fetch current user's likes if userId exists
+      let userLikedCommentIds = new Set()
+      if (userId) {
+        const userLikes = await CommentLikeModel.find({
+          commentId: { $in: commentIds },
+          userId
+        }).lean()
+        userLikedCommentIds = new Set(userLikes.map((like) => like.commentId.toString()))
+      }
+
+      // Build comment map with additional fields
+      const commentMap = {}
+      comments.forEach((comment) => {
+        const commentIdStr = comment._id.toString()
+        commentMap[commentIdStr] = {
+          ...comment,
+          likesCount: likeCounts[commentIdStr] || 0,
+          userLiked: userLikedCommentIds.has(commentIdStr),
+          comments: [] // Initialize empty array for replies
+        }
+      })
+
+      // Build the comment tree
+      const rootComments = []
+      const addedAsReply = new Set()
+
+      // First pass: Add root comments and attach replies to parents
+      comments.forEach((comment) => {
+        const commentIdStr = comment._id.toString()
+        if (!comment.parentId) {
+          rootComments.push(commentMap[commentIdStr])
+        } else {
+          const parentIdStr = comment.parentId.toString()
+          if (commentMap[parentIdStr]) {
+            commentMap[parentIdStr].comments.push(commentMap[commentIdStr])
+            addedAsReply.add(commentIdStr)
           }
+        }
+      })
 
-          console.log(`Comment ${comment._id} - userLiked:`, userLiked, 'likesCount:', likesCount)
+      // Second pass: Add orphaned comments (with parentId but parent not found) as root comments
+      comments.forEach((comment) => {
+        const commentIdStr = comment._id.toString()
+        if (comment.parentId && !addedAsReply.has(commentIdStr)) {
+          rootComments.push(commentMap[commentIdStr])
+        }
+      })
 
-          // Đếm số lượng replies nếu là comment gốc
-          let replyCount = 0
-          if (!comment.parentId) {
-            replyCount = await PostCommentModel.countDocuments({ parentId: comment._id })
-          }
+      // Sort root comments by createdAt descending (newest first)
+      rootComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
-          return {
-            ...comment.toObject(),
-            likesCount,
-            userLiked,
-            replyCount
-          }
-        })
-      )
+      // Recursively sort replies by createdAt ascending (oldest first)
+      function sortReplies(comment) {
+        if (comment.comments && comment.comments.length > 0) {
+          comment.comments.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+          comment.comments.forEach(sortReplies)
+        }
+      }
+      rootComments.forEach(sortReplies)
 
+      // Paginate root comments
+      const totalRootComments = rootComments.length
+      const startIndex = (pageNum - 1) * limitNum
+      const endIndex = startIndex + limitNum
+      const paginatedRootComments = rootComments.slice(startIndex, endIndex)
+
+      const totalPages = Math.ceil(totalRootComments / limitNum)
+
+      // Return response
       return res.status(200).json({
         message: 'Get comments successfully',
-        data: commentsWithLikeInfo,
+        data: paginatedRootComments,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total,
-          totalPages: Math.ceil(total / Number(limit))
+          page: pageNum,
+          limit: limitNum,
+          total: totalRootComments,
+          totalPages
         }
       })
     } catch (error: any) {
-      console.error('Error getting comments:', error)
+      console.error('Error in getComments:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
@@ -808,6 +857,98 @@ class PostController {
       })
     } catch (error: any) {
       console.error('Error in getUserPosts:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
+    }
+  }
+
+  async updateComment(req: Request, res: Response): Promise<any> {
+    try {
+      const { id: commentId } = req.params
+      const { content } = req.body
+      const userId = req.context?.user?._id
+
+      // Validate input
+      if (!commentId || !content) {
+        return res.status(400).json({ message: 'Comment ID and content are required' })
+      }
+
+      // Validate commentId format
+      if (!mongoose.Types.ObjectId.isValid(commentId)) {
+        return res.status(400).json({ message: 'Invalid Comment ID format' })
+      }
+
+      // Find the comment
+      const comment = await PostCommentModel.findById(commentId)
+      if (!comment) {
+        return res.status(404).json({ message: 'Comment not found' })
+      }
+
+      // Check if user is the owner of the comment
+      if (comment.userId.toString() !== userId?.toString()) {
+        return res.status(403).json({ message: 'You can only edit your own comments' })
+      }
+
+      // Update the comment
+      const updatedComment = await PostCommentModel.findByIdAndUpdate(
+        commentId,
+        { content, updatedAt: new Date() },
+        { new: true }
+      ).populate('userId', 'name avatar username')
+
+      return res.status(200).json({
+        message: 'Comment updated successfully',
+        data: updatedComment
+      })
+    } catch (error: any) {
+      console.error('Error updating comment:', error)
+      return res.status(500).json({ message: error.message || 'Internal server error' })
+    }
+  }
+
+  async deleteComment(req: Request, res: Response): Promise<any> {
+    try {
+      const { id: commentId } = req.params
+      const userId = req.context?.user?._id
+
+      // Validate input
+      if (!commentId) {
+        return res.status(400).json({ message: 'Comment ID is required' })
+      }
+
+      // Validate commentId format
+      if (!mongoose.Types.ObjectId.isValid(commentId)) {
+        return res.status(400).json({ message: 'Invalid Comment ID format' })
+      }
+
+      // Find the comment
+      const comment = await PostCommentModel.findById(commentId)
+      if (!comment) {
+        return res.status(404).json({ message: 'Comment not found' })
+      }
+
+      // Check if user is the owner of the comment
+      if (comment.userId.toString() !== userId?.toString()) {
+        return res.status(403).json({ message: 'You can only delete your own comments' })
+      }
+
+      // Delete all replies to this comment first
+      await PostCommentModel.deleteMany({ parentId: commentId })
+
+      // Delete all likes for this comment and its replies
+      await CommentLikeModel.deleteMany({ commentId: commentId })
+
+      // Delete the comment
+      await PostCommentModel.findByIdAndDelete(commentId)
+
+      // Update comment count on the post
+      await PostModel.findByIdAndUpdate(comment.postId, { $inc: { comment_count: -1 } })
+
+      return res.status(200).json({
+        message: 'Comment deleted successfully',
+        data: { commentId }
+      })
+    } catch (error: any) {
+      console.error('Error deleting comment:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }

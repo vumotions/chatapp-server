@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Request, Response } from 'express'
+import { NextFunction, Request, Response } from 'express'
 import mongoose from 'mongoose'
+import { AppError } from '~/models/error.model'
 import CommentLikeModel from '~/models/comment-like.model'
 import NotificationModel from '~/models/notification.model'
 import PostCommentModel from '~/models/post-comment.model'
@@ -170,7 +171,7 @@ class PostController {
       const likes = await CommentLikeModel.find({ commentId: { $in: commentIds } }).lean()
 
       // Calculate like counts
-      const likeCounts = {}
+      const likeCounts: any = {}
       likes.forEach((like) => {
         const commentIdStr = like.commentId.toString()
         likeCounts[commentIdStr] = (likeCounts[commentIdStr] || 0) + 1
@@ -187,7 +188,7 @@ class PostController {
       }
 
       // Build comment map with additional fields
-      const commentMap = {}
+      const commentMap: any = {}
       comments.forEach((comment) => {
         const commentIdStr = comment._id.toString()
         commentMap[commentIdStr] = {
@@ -199,7 +200,7 @@ class PostController {
       })
 
       // Build the comment tree
-      const rootComments = []
+      const rootComments: any[] = []
       const addedAsReply = new Set()
 
       // First pass: Add root comments and attach replies to parents
@@ -225,12 +226,14 @@ class PostController {
       })
 
       // Sort root comments by createdAt descending (newest first)
-      rootComments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      rootComments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
       // Recursively sort replies by createdAt ascending (oldest first)
-      function sortReplies(comment) {
+      function sortReplies(comment: any) {
         if (comment.comments && comment.comments.length > 0) {
-          comment.comments.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+          comment.comments.sort(
+            (a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          )
           comment.comments.forEach(sortReplies)
         }
       }
@@ -261,20 +264,35 @@ class PostController {
     }
   }
 
-  async createComment(req: Request, res: Response): Promise<any> {
+  async createComment(req: Request, res: Response, next: NextFunction): Promise<any> {
     try {
       const { postId, content, parentId, tempId } = req.body
       const userId = req.context?.user?._id
 
       // Validate input
       if (!postId || !content) {
-        return res.status(400).json({ message: 'Post ID and content are required' })
+        throw new AppError({
+          message: 'Post ID and content are required',
+          status: 400 // BAD_REQUEST
+        })
       }
 
       // Kiểm tra xem postId có phải ObjectId hợp lệ không
       if (!mongoose.Types.ObjectId.isValid(postId)) {
         console.log('Invalid postId format:', postId)
-        return res.status(400).json({ message: 'Invalid Post ID format' })
+        throw new AppError({
+          message: 'Invalid Post ID format',
+          status: 400 // BAD_REQUEST
+        })
+      }
+
+      // Tìm bài viết để lấy thông tin người tạo
+      const post = await PostModel.findById(postId)
+      if (!post) {
+        throw new AppError({
+          message: 'Post not found',
+          status: 404 // NOT_FOUND
+        })
       }
 
       // Tạo đối tượng comment
@@ -299,7 +317,7 @@ class PostController {
       // Populate user data for the response
       const populatedComment = await PostCommentModel.findById(comment._id).populate(
         'userId',
-        'name avatar'
+        'name avatar username'
       )
 
       // Update comment count on the post
@@ -333,13 +351,59 @@ class PostController {
         }
       }
 
+      // Tạo thông báo cho chủ bài viết nếu người bình luận không phải chủ bài viết
+      if (post.userId.toString() !== userId?.toString()) {
+        try {
+          // Tạo nội dung thông báo phù hợp hơn
+          let notificationContent = ''
+
+          // Lấy nội dung bình luận (giới hạn độ dài)
+          const truncatedContent = content.length > 50 ? content.substring(0, 50) + '...' : content
+
+          // Nếu là reply cho comment khác
+          if (parentId) {
+            notificationContent = `đã trả lời một bình luận trong bài viết của bạn: "${truncatedContent}"`
+          } else {
+            notificationContent = `đã bình luận về bài viết của bạn: "${truncatedContent}"`
+          }
+
+          // Tạo thông báo với nội dung tùy chỉnh
+          const notification = await NotificationModel.create({
+            userId: post.userId,
+            senderId: userId,
+            type: 'NEW_COMMENT',
+            relatedId: postId,
+            content: notificationContent
+          })
+
+          // Gửi thông báo qua socket nếu chủ bài viết đang online
+          if (io) {
+            const { users } = require('~/lib/socket')
+            const recipientSocketId = users.get(post.userId.toString())
+            if (recipientSocketId) {
+              io.to(recipientSocketId).emit('NOTIFICATION_NEW', notification)
+            }
+          }
+        } catch (notifError) {
+          console.error('Error creating comment notification:', notifError)
+        }
+      }
+
       return res.status(201).json({
         message: 'Comment created successfully',
         data: populatedComment
       })
     } catch (error: any) {
       console.error('Error in createComment:', error)
-      return res.status(500).json({ message: error.message || 'Internal server error' })
+      if (error instanceof AppError) {
+        return next(error)
+      }
+      return next(
+        new AppError({
+          message: error.message || 'Internal server error',
+          status: 500 // INTERNAL_SERVER_ERROR
+        })
+      )
     }
   }
 

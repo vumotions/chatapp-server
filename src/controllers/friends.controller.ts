@@ -242,49 +242,59 @@ class FriendsController {
 
       // Lấy tất cả user đã là bạn
       const friends = await FriendModel.find({ userId }).select('friendId')
+      const userFriendIds = friends.map((f) => f.friendId.toString())
 
-      // Lấy danh sách lời mời đã gửi
+      // Lấy danh sách lời mời đã gửi/nhận
       const sentRequests = await FriendRequestModel.find({
         senderId: userId,
         status: FRIEND_REQUEST_STATUS.PENDING
       }).select('receiverId')
-
-      // Lấy danh sách lời mời đã nhận
       const receivedRequests = await FriendRequestModel.find({
         receiverId: userId,
         status: FRIEND_REQUEST_STATUS.PENDING
       }).select('senderId')
 
-      // Chỉ loại trừ chính mình và những người đã là bạn
-      const excludeIds = [userId, ...friends.map((f) => f.friendId)]
-
-      // Lấy danh sách ID người đã nhận lời mời từ mình
+      // IDs cần loại trừ
+      const excludeIds = [userId, ...userFriendIds]
       const pendingIds = sentRequests.map((r) => r.receiverId.toString())
-
-      // Lấy danh sách ID người đã gửi lời mời cho mình
       const receivedIds = receivedRequests.map((r) => r.senderId.toString())
 
-      // Lấy user chưa là bạn, bao gồm cả những người đã nhận lời mời từ mình
-      const userFriends = await FriendModel.find({ userId }).select('friendId')
-      const userFriendIds = userFriends.map((f) => f.friendId.toString())
-
-      // Đếm tổng số người dùng thỏa mãn điều kiện để tính tổng số trang
+      // Lấy bạn của bạn (mối quan hệ bậc 2) - ưu tiên cao nhất
+      const friendsOfFriends = await FriendModel.find({ 
+        userId: { $in: userFriendIds },
+        friendId: { $nin: [...excludeIds, ...receivedIds] }
+      }).select('friendId').limit(limit * 2)
+      
+      const fofIds = friendsOfFriends.map(f => f.friendId.toString())
+      
+      // Đếm tổng số người dùng thỏa mãn điều kiện
       const totalCount = await UserModel.countDocuments({
         _id: { $nin: excludeIds },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
 
-      // Lấy tất cả người dùng trừ những người đã loại trừ, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH, có phân trang
-      // QUAN TRỌNG: Loại bỏ những người đã gửi lời mời cho mình (receivedIds)
-      // để tránh trùng lặp với receivedSuggestions
-      const allUsers = await UserModel.find({
-        _id: { $nin: [...excludeIds, ...receivedIds] }, // Thêm receivedIds vào đây
+      // Lấy người dùng ưu tiên (bạn của bạn)
+      const priorityUsers = await UserModel.find({
+        _id: { $in: fofIds },
+        verify: USER_VERIFY_STATUS.VERIFIED
+      })
+        .select('_id name avatar username')
+        .limit(limit)
+        .lean()
+      
+      // Nếu chưa đủ limit, lấy thêm người dùng khác
+      const remainingLimit = limit - priorityUsers.length
+      const otherUsers = remainingLimit > 0 ? await UserModel.find({
+        _id: { $nin: [...excludeIds, ...receivedIds, ...fofIds] },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
         .select('_id name avatar username')
         .skip(skip)
-        .limit(limit)
-        .lean()
+        .limit(remainingLimit)
+        .lean() : []
+
+      // Kết hợp kết quả
+      const allUsers = [...priorityUsers, ...otherUsers]
 
       // Tính mutualFriends và thêm trạng thái cho từng người
       const suggestions = await Promise.all(

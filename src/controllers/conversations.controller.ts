@@ -61,7 +61,11 @@ class ConversationsController {
 
       console.log('Query for user conversations:', JSON.stringify(query))
 
-      // Tìm tất cả cuộc trò chuyện mà người dùng tham gia
+      // Đếm tổng số cuộc trò chuyện trước khi phân trang
+      const totalCount = await ChatModel.countDocuments(query);
+      console.log(`Total conversations count: ${totalCount}`);
+
+      // Tìm tất cả cuộc trò chuyện mà người dùng tham gia với phân trang
       let conversations = await ChatModel.find(query)
         .populate({
           path: 'participants',
@@ -79,9 +83,9 @@ class ConversationsController {
         .limit(limit)
         .lean() // Convert to plain JavaScript objects
 
-      console.log(`Found ${conversations.length} conversations before processing`)
+      console.log(`Found ${conversations.length} conversations for page ${page}`);
 
-      // Xử lý dữ liệu trước khi lọc
+      // Xử lý dữ liệu trước khi trả về
       const processedConversations = conversations.map((conv) => {
         const conversation = conv as any // Type assertion to avoid TypeScript errors
 
@@ -107,43 +111,20 @@ class ConversationsController {
         return conversation
       })
 
-      // Lọc kết quả theo searchQuery nếu có
-      let filteredConversations = processedConversations
-      if (searchQuery) {
-        filteredConversations = processedConversations.filter((conv) => {
-          // Tìm kiếm chính xác trong tên nhóm chat
-          if (conv.name) {
-            const nameMatch = conv.name.toLowerCase().includes(searchQuery.toLowerCase())
-            if (nameMatch) return true
-          }
-
-          // Tìm kiếm chính xác trong tên người tham gia
-          const participantMatch = conv.participants.some((participant: any) => {
-            if (participant.name) {
-              return participant.name.toLowerCase().includes(searchQuery.toLowerCase())
-            }
-            return false
-          })
-
-          return participantMatch
-        })
-      }
-
       // Kiểm tra lại một lần nữa để đảm bảo không có chat nào có archived=true
-      filteredConversations = filteredConversations.filter((conv) => !conv.archived)
-      console.log(`After final filtering: ${filteredConversations.length} conversations`)
-
-      // Phân trang sau khi lọc
-      const totalItems = filteredConversations.length
-      const paginatedConversations = filteredConversations.slice(skip, skip + limit)
+      const filteredConversations = processedConversations.filter((conv) => !conv.archived)
+      
+      // Tính toán hasMore dựa trên tổng số cuộc trò chuyện
+      const hasMore = totalCount > skip + filteredConversations.length;
+      console.log(`Has more conversations: ${hasMore}, total: ${totalCount}, current: ${skip + filteredConversations.length}`);
 
       // Trả về kết quả
       res.json(
         new AppSuccess({
           data: {
-            conversations: paginatedConversations,
-            hasMore: totalItems > skip + limit,
-            total: totalItems
+            conversations: filteredConversations,
+            hasMore: hasMore,
+            total: totalCount
           },
           message: 'Get conversations successfully'
         })

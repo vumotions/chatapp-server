@@ -47,7 +47,7 @@ const initSocket = async (server: HttpServer) => {
   console.log('Creating Socket.io instance...')
   io = new Server(server, {
     cors: {
-      origin: env.WEBSITE_URL || 'http://localhost:3000',
+      origin: env.WEBSITE_URL,
       methods: ['POST', 'GET'],
       credentials: true
     },

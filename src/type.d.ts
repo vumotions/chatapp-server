@@ -1,4 +1,4 @@
-import { IUser } from './models/user.model'
+import { IUser } from './models/User.model'
 import { TokenPayload } from './types/payload.type'
 
 declare global {

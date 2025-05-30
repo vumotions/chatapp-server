@@ -5,7 +5,7 @@ import { USER_VERIFY_STATUS } from '~/constants/enums'
 import { hashPassword } from '~/helpers/crypto'
 import { AppError } from '~/models/error.model'
 import { TransformContext } from '~/models/transform-context.model'
-import UserModel from '~/models/user.model'
+import UserModel from '~/models/User.model'
 
 const rawLoginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),

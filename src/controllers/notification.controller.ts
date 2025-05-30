@@ -5,7 +5,7 @@ import { emitSocketEvent, users } from '~/lib/socket'
 import NotificationModel from '~/models/notification.model'
 import { AppError } from '~/models/error.model'
 import { AppSuccess } from '~/models/success.model'
-import { IUser } from '~/models/user.model'
+import { IUser } from '~/models/User.model'
 import notificationService from '~/services/notification.service'
 
 class NotificationController {

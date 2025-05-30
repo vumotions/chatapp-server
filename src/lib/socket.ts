@@ -48,8 +48,12 @@ const initSocket = async (server: HttpServer) => {
   io = new Server(server, {
     cors: {
       origin: env.WEBSITE_URL || 'http://localhost:3000',
-      methods: ['POST', 'GET']
-    }
+      methods: ['POST', 'GET'],
+      credentials: true
+    },
+    addTrailingSlash: false,
+    path: '/socket.io',
+    transports: ['websocket', 'polling']
   })
 
   io.use(async (socket, next) => {

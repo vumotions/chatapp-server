@@ -2,7 +2,7 @@ import { env } from '~/config/env'
 import { OTP_STATUS } from '~/constants/enums'
 import { generateOTP } from '~/helpers/common'
 import OTPModel from '~/models/otp.model'
-import { IUser } from '~/models/user.model'
+import { IUser } from '~/models/User.model'
 import mailService from './mail.service'
 
 class OTPService {

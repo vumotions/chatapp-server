@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import UserModel from '~/models/User.model'
+import UserModel from '~/models/user.model'
 import PostModel from '~/models/post.model'
 import ChatModel from '~/models/chat.model'
 import FriendModel from '~/models/friend.model'

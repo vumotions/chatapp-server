@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import mongoose from 'mongoose'
 import { AppError } from '~/models/error.model'
 import SettingsModel from '~/models/settings.model'
-import { IUser } from '~/models/User.model'
+import { IUser } from '~/models/user.model'
 
 /**
  * Middleware kiểm tra xem người dùng hiện tại có bị người dùng khác chặn không

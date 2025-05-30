@@ -109,4 +109,12 @@ postsRoutes.get(
   wrapRequestHandler(postController.getPostById)
 )
 
+// Delete a post
+postsRoutes.delete(
+  '/:postId',
+  accessTokenValidator,
+  verifiedUserValidator,
+  wrapRequestHandler(postController.deletePost)
+)
+
 export default postsRoutes

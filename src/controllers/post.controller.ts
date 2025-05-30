@@ -1074,6 +1074,96 @@ class PostController {
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }
+
+  // Thêm phương thức xóa bài viết
+  async deletePost(req: Request, res: Response, next: NextFunction): Promise<any> {
+    try {
+      const userId = req.context?.user?._id
+      const { postId } = req.params
+
+      if (!postId) {
+        throw new AppError({
+          message: 'Post ID is required',
+          status: 400 // BAD_REQUEST
+        })
+      }
+
+      // Kiểm tra xem postId có phải ObjectId hợp lệ không
+      if (!mongoose.Types.ObjectId.isValid(postId)) {
+        throw new AppError({
+          message: 'Invalid Post ID format',
+          status: 400 // BAD_REQUEST
+        })
+      }
+
+      // Kiểm tra xem bài viết có tồn tại không
+      const post = await PostModel.findById(postId)
+      if (!post) {
+        throw new AppError({
+          message: 'Post not found',
+          status: 404 // NOT_FOUND
+        })
+      }
+
+      // Kiểm tra quyền xóa (chỉ người tạo bài viết mới có quyền xóa)
+      if (post.userId.toString() !== userId?.toString()) {
+        throw new AppError({
+          message: 'You do not have permission to delete this post',
+          status: 403 // FORBIDDEN
+        })
+      }
+
+      // Xóa tất cả comment của bài viết
+      await PostCommentModel.deleteMany({ postId })
+
+      // Xóa tất cả like của bài viết
+      await PostLikeModel.deleteMany({ postId })
+
+      // Xóa tất cả thông báo liên quan đến bài viết
+      await NotificationModel.deleteMany({ relatedId: postId })
+
+      // Xóa tất cả bài viết chia sẻ từ bài viết này
+      const sharedPosts = await PostModel.find({ shared_post: postId })
+      for (const sharedPost of sharedPosts) {
+        await PostModel.findByIdAndDelete(sharedPost._id)
+        await PostCommentModel.deleteMany({ postId: sharedPost._id })
+        await PostLikeModel.deleteMany({ postId: sharedPost._id })
+        await NotificationModel.deleteMany({ relatedId: sharedPost._id })
+      }
+
+      // Xóa các file media liên quan (nếu có)
+      if (post.media && post.media.length > 0) {
+        for (const media of post.media) {
+          if (media.public_id) {
+            try {
+              await uploadService.deleteFile(media.public_id)
+            } catch (error) {
+              console.error('Error deleting media file:', error)
+            }
+          }
+        }
+      }
+
+      // Xóa bài viết
+      await PostModel.findByIdAndDelete(postId)
+
+      return res.status(200).json({
+        message: 'Post deleted successfully',
+        data: { postId }
+      })
+    } catch (error: any) {
+      console.error('Error deleting post:', error)
+      if (error instanceof AppError) {
+        return next(error)
+      }
+      return next(
+        new AppError({
+          message: error.message || 'Internal server error',
+          status: 500 // INTERNAL_SERVER_ERROR
+        })
+      )
+    }
+  }
 }
 const postController = new PostController()
 export default postController

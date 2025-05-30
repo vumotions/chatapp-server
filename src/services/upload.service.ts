@@ -48,28 +48,28 @@ class UploadService {
       const uploadPromises = files.map(async (file) => {
         try {
           // Phân loại file dựa trên MIME type
-          let fileType = 'other';
-          
+          let fileType = 'other'
+
           if (file.mimetype.startsWith('image/')) {
-            fileType = 'image';
+            fileType = 'image'
           } else if (file.mimetype.startsWith('video/')) {
-            fileType = 'video';
+            fileType = 'video'
           } else if (file.mimetype.startsWith('audio/')) {
-            fileType = 'audio';
+            fileType = 'audio'
           } else if (file.mimetype.includes('pdf')) {
-            fileType = 'pdf';
+            fileType = 'pdf'
           } else if (file.mimetype.includes('word') || file.mimetype.includes('document')) {
-            fileType = 'document';
+            fileType = 'document'
           } else if (file.mimetype.includes('excel') || file.mimetype.includes('spreadsheet')) {
-            fileType = 'spreadsheet';
+            fileType = 'spreadsheet'
           } else if (file.mimetype.includes('text/')) {
-            fileType = 'text';
+            fileType = 'text'
           }
-          
+
           // Xác định folder dựa trên loại file
-          const folder = `posts/${fileType}s`;
-          
-          const result = await this.uploadToCloudinary(file, folder);
+          const folder = `posts/${fileType}s`
+
+          const result = await this.uploadToCloudinary(file, folder)
 
           // Đảm bảo trả về đúng định dạng
           return {
@@ -88,6 +88,37 @@ class UploadService {
       return results
     } catch (error: any) {
       throw new Error(`Failed to upload files: ${error?.message}`)
+    }
+  }
+
+  // Thêm phương thức xóa file từ Cloudinary
+  async deleteFile(publicId: string): Promise<any> {
+    if (!publicId) {
+      throw new Error('Public ID is required to delete file')
+    }
+
+    try {
+      // Xóa file từ Cloudinary
+      const result = await new Promise((resolve, reject) => {
+        cloudinary.uploader.destroy(
+          publicId,
+          { resource_type: 'auto' }, // Tự động phát hiện loại tài nguyên
+          (error: any, result: any) => {
+            if (error) {
+              console.error('Cloudinary delete error:', error)
+              reject(error)
+            } else {
+              resolve(result)
+            }
+          }
+        )
+      })
+
+      console.log('File deleted from Cloudinary:', publicId, result)
+      return result
+    } catch (error: any) {
+      console.error(`Failed to delete file with public ID ${publicId}:`, error)
+      throw new Error(`Failed to delete file: ${error.message}`)
     }
   }
 }

@@ -18,7 +18,7 @@ import { AppError } from '~/models/error.model'
 import MessageModel from '~/models/message.model'
 import NotificationModel from '~/models/notification.model'
 import { AppSuccess } from '~/models/success.model'
-import UserModel from '~/models/User.model'
+import UserModel from '~/models/user.model'
 
 class ConversationsController {
   async getUserConversations(req: Request, res: Response, next: NextFunction) {

@@ -14,7 +14,7 @@ import FriendModel from '~/models/friend.model'
 import NotificationModel from '~/models/notification.model'
 import SettingsModel from '~/models/settings.model'
 import { AppSuccess } from '~/models/success.model'
-import UserModel, { IUser } from '~/models/User.model'
+import UserModel, { IUser } from '~/models/user.model'
 import notificationService from '~/services/notification.service'
 
 class FriendsController {

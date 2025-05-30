@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import notificationService from '~/services/notification.service'
 import { AppSuccess } from '~/models/success.model'
 import { AppError } from '~/models/error.model'
-import { IUser } from '~/models/User.model'
+import { IUser } from '~/models/user.model'
 import NotificationModel from '~/models/notification.model'
 import { NOTIFICATION_TYPE } from '~/constants/enums'
 

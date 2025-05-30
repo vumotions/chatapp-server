@@ -18,7 +18,7 @@ import { AppError } from '~/models/error.model'
 import MessageModel from '~/models/message.model'
 import NotificationModel from '~/models/notification.model'
 import { AppSuccess } from '~/models/success.model'
-import UserModel from '~/models/user.model'
+import UserModel from '~/models/User.model'
 
 class ConversationsController {
   async getUserConversations(req: Request, res: Response, next: NextFunction) {
@@ -62,8 +62,8 @@ class ConversationsController {
       console.log('Query for user conversations:', JSON.stringify(query))
 
       // Đếm tổng số cuộc trò chuyện trước khi phân trang
-      const totalCount = await ChatModel.countDocuments(query);
-      console.log(`Total conversations count: ${totalCount}`);
+      const totalCount = await ChatModel.countDocuments(query)
+      console.log(`Total conversations count: ${totalCount}`)
 
       // Tìm tất cả cuộc trò chuyện mà người dùng tham gia với phân trang
       let conversations = await ChatModel.find(query)
@@ -83,7 +83,7 @@ class ConversationsController {
         .limit(limit)
         .lean() // Convert to plain JavaScript objects
 
-      console.log(`Found ${conversations.length} conversations for page ${page}`);
+      console.log(`Found ${conversations.length} conversations for page ${page}`)
 
       // Xử lý dữ liệu trước khi trả về
       const processedConversations = conversations.map((conv) => {
@@ -113,10 +113,12 @@ class ConversationsController {
 
       // Kiểm tra lại một lần nữa để đảm bảo không có chat nào có archived=true
       const filteredConversations = processedConversations.filter((conv) => !conv.archived)
-      
+
       // Tính toán hasMore dựa trên tổng số cuộc trò chuyện
-      const hasMore = totalCount > skip + filteredConversations.length;
-      console.log(`Has more conversations: ${hasMore}, total: ${totalCount}, current: ${skip + filteredConversations.length}`);
+      const hasMore = totalCount > skip + filteredConversations.length
+      console.log(
+        `Has more conversations: ${hasMore}, total: ${totalCount}, current: ${skip + filteredConversations.length}`
+      )
 
       // Trả về kết quả
       res.json(

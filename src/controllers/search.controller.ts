@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import UserModel from '~/models/user.model'
+import UserModel from '~/models/User.model'
 import PostModel from '~/models/post.model'
 import ChatModel from '~/models/chat.model'
 import FriendModel from '~/models/friend.model'
@@ -38,7 +38,7 @@ class SearchController {
       if (userId) {
         const friends = await FriendModel.find({ userId }).select('friendId')
         if (friends.length > 0) {
-          friendIds.push(...friends.map(f => f.friendId))
+          friendIds.push(...friends.map((f) => f.friendId))
         }
       }
 
@@ -61,10 +61,7 @@ class SearchController {
       // Thêm điều kiện bài viết của bạn bè nếu có bạn bè
       if (friendIds.length > 0) {
         postQuery.$and[0].$or.push({
-          $and: [
-            { userId: { $in: friendIds } },
-            { post_type: 'friends' }
-          ]
+          $and: [{ userId: { $in: friendIds } }, { post_type: 'friends' }]
         })
       }
 
@@ -116,10 +113,12 @@ class SearchController {
       const { q } = req.query
 
       if (!q || typeof q !== 'string') {
-        res.json(new AppSuccess({ 
-          message: 'No search query provided',
-          data: [] 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'No search query provided',
+            data: []
+          })
+        )
         return
       }
 
@@ -133,10 +132,12 @@ class SearchController {
         .select('_id name username avatar')
         .limit(20)
 
-      res.json(new AppSuccess({ 
-        message: 'Users found successfully',
-        data: users 
-      }))
+      res.json(
+        new AppSuccess({
+          message: 'Users found successfully',
+          data: users
+        })
+      )
     } catch (error) {
       next(error)
     }
@@ -148,10 +149,12 @@ class SearchController {
       const userId = req.context?.user?._id
 
       if (!q || typeof q !== 'string') {
-        res.json(new AppSuccess({ 
-          message: 'No search query provided',
-          data: [] 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'No search query provided',
+            data: []
+          })
+        )
         return
       }
 
@@ -160,7 +163,7 @@ class SearchController {
       if (userId) {
         const friends = await FriendModel.find({ userId }).select('friendId')
         if (friends.length > 0) {
-          friendIds.push(...friends.map(f => f.friendId))
+          friendIds.push(...friends.map((f) => f.friendId))
         }
       }
 
@@ -183,10 +186,7 @@ class SearchController {
       // Thêm điều kiện bài viết của bạn bè nếu có bạn bè
       if (friendIds.length > 0) {
         postQuery.$and[0].$or.push({
-          $and: [
-            { userId: { $in: friendIds } },
-            { post_type: 'friends' }
-          ]
+          $and: [{ userId: { $in: friendIds } }, { post_type: 'friends' }]
         })
       }
 
@@ -196,10 +196,12 @@ class SearchController {
         .sort({ created_at: -1 })
         .limit(20)
 
-      res.json(new AppSuccess({ 
-        message: 'Posts found successfully',
-        data: posts 
-      }))
+      res.json(
+        new AppSuccess({
+          message: 'Posts found successfully',
+          data: posts
+        })
+      )
     } catch (error) {
       next(error)
     }
@@ -211,10 +213,12 @@ class SearchController {
       const userId = req.context?.user?._id
 
       if (!q || typeof q !== 'string' || !userId) {
-        res.json(new AppSuccess({ 
-          message: 'No search query or user ID provided',
-          data: [] 
-        }))
+        res.json(
+          new AppSuccess({
+            message: 'No search query or user ID provided',
+            data: []
+          })
+        )
         return
       }
 
@@ -240,10 +244,12 @@ class SearchController {
         .sort({ updatedAt: -1 })
         .limit(20)
 
-      res.json(new AppSuccess({ 
-        message: 'Conversations found successfully',
-        data: conversations 
-      }))
+      res.json(
+        new AppSuccess({
+          message: 'Conversations found successfully',
+          data: conversations
+        })
+      )
     } catch (error) {
       next(error)
     }
@@ -251,7 +257,3 @@ class SearchController {
 }
 
 export default new SearchController()
-
-
-
-

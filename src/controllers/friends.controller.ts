@@ -1,5 +1,10 @@
 import { NextFunction, Request, Response } from 'express'
-import { FRIEND_REQUEST_STATUS, MEMBER_ROLE, NOTIFICATION_TYPE, USER_VERIFY_STATUS } from '~/constants/enums'
+import {
+  FRIEND_REQUEST_STATUS,
+  MEMBER_ROLE,
+  NOTIFICATION_TYPE,
+  USER_VERIFY_STATUS
+} from '~/constants/enums'
 import SOCKET_EVENTS from '~/constants/socket-events'
 import { io, users } from '~/lib/socket'
 import ChatModel from '~/models/chat.model'
@@ -9,7 +14,7 @@ import FriendModel from '~/models/friend.model'
 import NotificationModel from '~/models/notification.model'
 import SettingsModel from '~/models/settings.model'
 import { AppSuccess } from '~/models/success.model'
-import UserModel, { IUser } from '~/models/user.model'
+import UserModel, { IUser } from '~/models/User.model'
 import notificationService from '~/services/notification.service'
 
 class FriendsController {
@@ -24,19 +29,25 @@ class FriendsController {
 
       // Kiểm tra xem người dùng có bị chặn không
       const senderSettings = await SettingsModel.findOne({ userId })
-      if (senderSettings && senderSettings.security.blockedUsers.some(id => id.toString() === receiverId)) {
-        throw new AppError({ 
-          message: 'Không thể gửi lời mời kết bạn đến người dùng bạn đã chặn', 
-          status: 400 
+      if (
+        senderSettings &&
+        senderSettings.security.blockedUsers.some((id) => id.toString() === receiverId)
+      ) {
+        throw new AppError({
+          message: 'Không thể gửi lời mời kết bạn đến người dùng bạn đã chặn',
+          status: 400
         })
       }
 
       // Kiểm tra xem mình có bị người nhận chặn không
       const receiverSettings = await SettingsModel.findOne({ userId: receiverId })
-      if (receiverSettings && receiverSettings.security.blockedUsers.some(id => id.toString() === userId)) {
-        throw new AppError({ 
-          message: 'Không thể gửi lời mời kết bạn đến người dùng này', 
-          status: 400 
+      if (
+        receiverSettings &&
+        receiverSettings.security.blockedUsers.some((id) => id.toString() === userId)
+      ) {
+        throw new AppError({
+          message: 'Không thể gửi lời mời kết bạn đến người dùng này',
+          status: 400
         })
       }
 
@@ -260,13 +271,15 @@ class FriendsController {
       const receivedIds = receivedRequests.map((r) => r.senderId.toString())
 
       // Lấy bạn của bạn (mối quan hệ bậc 2) - ưu tiên cao nhất
-      const friendsOfFriends = await FriendModel.find({ 
+      const friendsOfFriends = await FriendModel.find({
         userId: { $in: userFriendIds },
         friendId: { $nin: [...excludeIds, ...receivedIds] }
-      }).select('friendId').limit(limit * 2)
-      
-      const fofIds = friendsOfFriends.map(f => f.friendId.toString())
-      
+      })
+        .select('friendId')
+        .limit(limit * 2)
+
+      const fofIds = friendsOfFriends.map((f) => f.friendId.toString())
+
       // Đếm tổng số người dùng thỏa mãn điều kiện
       const totalCount = await UserModel.countDocuments({
         _id: { $nin: excludeIds },
@@ -281,17 +294,20 @@ class FriendsController {
         .select('_id name avatar username')
         .limit(limit)
         .lean()
-      
+
       // Nếu chưa đủ limit, lấy thêm người dùng khác
       const remainingLimit = limit - priorityUsers.length
-      const otherUsers = remainingLimit > 0 ? await UserModel.find({
-        _id: { $nin: [...excludeIds, ...receivedIds, ...fofIds] },
-        verify: USER_VERIFY_STATUS.VERIFIED
-      })
-        .select('_id name avatar username')
-        .skip(skip)
-        .limit(remainingLimit)
-        .lean() : []
+      const otherUsers =
+        remainingLimit > 0
+          ? await UserModel.find({
+              _id: { $nin: [...excludeIds, ...receivedIds, ...fofIds] },
+              verify: USER_VERIFY_STATUS.VERIFIED
+            })
+              .select('_id name avatar username')
+              .skip(skip)
+              .limit(remainingLimit)
+              .lean()
+          : []
 
       // Kết hợp kết quả
       const allUsers = [...priorityUsers, ...otherUsers]
@@ -598,21 +614,21 @@ class FriendsController {
   async getFriendsByUsername(req: Request, res: Response, next: NextFunction) {
     try {
       const { username } = req.params
-      
+
       // Tìm user theo username
       const user = await UserModel.findOne({ username })
       if (!user) {
         throw new AppError({ message: 'Không tìm thấy người dùng', status: 404 })
       }
-      
+
       // Lấy danh sách bạn bè của user này
       const friends = await FriendModel.find({ userId: user._id })
         .populate('friendId', '_id name avatar username')
         .lean()
-      
+
       // Chuyển đổi kết quả để phù hợp với định dạng trả về
-      const friendsList = friends.map(friend => friend.friendId)
-      
+      const friendsList = friends.map((friend) => friend.friendId)
+
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách bạn bè thành công',
@@ -629,45 +645,48 @@ class FriendsController {
     try {
       const userId = (req.context?.user as IUser)._id as string
       const { conversationId } = req.query
-      
+
       if (!conversationId) {
         throw new AppError({ message: 'Thiếu ID cuộc trò chuyện', status: 400 })
       }
-      
+
       // Lấy thông tin về cuộc trò chuyện
       const conversation = await ChatModel.findById(conversationId)
       if (!conversation) {
         throw new AppError({ message: 'Không tìm thấy cuộc trò chuyện', status: 404 })
       }
-      
+
       // Kiểm tra người dùng có trong cuộc trò chuyện không
-      const isMember = conversation.participants.some(p => p.toString() === userId.toString())
+      const isMember = conversation.participants.some((p) => p.toString() === userId.toString())
       if (!isMember) {
-        throw new AppError({ message: 'Bạn không phải thành viên của cuộc trò chuyện này', status: 403 })
+        throw new AppError({
+          message: 'Bạn không phải thành viên của cuộc trò chuyện này',
+          status: 403
+        })
       }
-      
+
       // Lấy thông tin về vai trò của người dùng hiện tại
       const currentMember = conversation.members?.find(
-        m => m.userId.toString() === userId.toString()
+        (m) => m.userId.toString() === userId.toString()
       )
-      
+
       const isAdmin = currentMember?.role === 'ADMIN' || currentMember?.role === 'OWNER'
-      
+
       // Lấy danh sách tất cả thành viên trong nhóm
-      const memberIds = conversation.participants.map(p => p.toString())
-      
+      const memberIds = conversation.participants.map((p) => p.toString())
+
       // Lấy thông tin chi tiết của tất cả thành viên
       const allMembers = await UserModel.find({ _id: { $in: memberIds } })
         .select('_id name avatar username')
         .lean()
-      
+
       // Kết hợp thông tin thành viên với vai trò trong nhóm
-      const membersWithRoles = allMembers.map(member => {
+      const membersWithRoles = allMembers.map((member) => {
         // Tìm thông tin thành viên trong nhóm
         const memberInfo = conversation.members?.find(
-          m => m.userId.toString() === member._id.toString()
+          (m) => m.userId.toString() === member._id.toString()
         )
-        
+
         return {
           ...member,
           inGroup: true,
@@ -676,30 +695,33 @@ class FriendsController {
           customTitle: memberInfo?.customTitle || null
         }
       })
-      
+
       // Sắp xếp danh sách: Owner đầu tiên, sau đó là Admin, cuối cùng là Member
       const sortedMembers = membersWithRoles.sort((a, b) => {
         // Hàm helper để chuyển role thành số để so sánh
         const getRoleWeight = (role: string) => {
           switch (role) {
-            case 'OWNER': return 0;
-            case 'ADMIN': return 1;
-            default: return 2; // MEMBER hoặc các role khác
+            case 'OWNER':
+              return 0
+            case 'ADMIN':
+              return 1
+            default:
+              return 2 // MEMBER hoặc các role khác
           }
         }
-        
-        const roleWeightA = getRoleWeight(a.role);
-        const roleWeightB = getRoleWeight(b.role);
-        
+
+        const roleWeightA = getRoleWeight(a.role)
+        const roleWeightB = getRoleWeight(b.role)
+
         // So sánh theo role trước
         if (roleWeightA !== roleWeightB) {
-          return roleWeightA - roleWeightB;
+          return roleWeightA - roleWeightB
         }
-        
+
         // Nếu cùng role, sắp xếp theo tên
-        return (a?.name || '').localeCompare(b?.name || '');
-      });
-      
+        return (a?.name || '').localeCompare(b?.name || '')
+      })
+
       res.json(
         new AppSuccess({
           message: 'Lấy danh sách thành viên với vai trò thành công',

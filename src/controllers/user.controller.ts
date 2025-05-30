@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { omit } from 'lodash'
 import { AppError } from '~/models/error.model'
 import { AppSuccess } from '~/models/success.model'
-import UserModel, { IUser } from '~/models/user.model'
+import UserModel, { IUser } from '~/models/User.model'
 import { UpdateMyProfileDTO } from '~/schemas/user/update-profile.schema'
 import userService from '~/services/user.service'
 import SettingsModel from '~/models/settings.model'
@@ -340,7 +340,7 @@ class UsersController {
       if (language) {
         settings.preferences.language = language
       }
-      
+
       if (theme) {
         settings.preferences.theme = theme
       }
@@ -366,7 +366,7 @@ class UsersController {
 
       // Tìm settings của user
       let settings = await SettingsModel.findOne({ userId })
-      
+
       // Nếu không có settings, tạo mới với giá trị mặc định
       if (!settings) {
         settings = await SettingsModel.create({ userId })

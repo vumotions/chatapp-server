@@ -1,4 +1,4 @@
-import cors from 'cors'
+import cors, { CorsOptions } from 'cors'
 import express from 'express'
 import helmet from 'helmet'
 import http from 'http'
@@ -10,7 +10,7 @@ const envPath = path.resolve(__dirname, '../.env')
 dotenv.config({ path: envPath })
 
 // Thêm vào đầu file
-import 'tsconfig-paths/register';
+import 'tsconfig-paths/register'
 
 import { env } from './config/env'
 import database from './lib/database'
@@ -30,11 +30,19 @@ const port = env.PORT
 
 const app = express()
 database.connect()
-
+const CLIENT_URL = 'https://social-media-client-eosin.vercel.app'
+export const isProduction = process.env.PRODUCTION === 'production'
+const corsOptions: CorsOptions = {
+  origin: isProduction ? CLIENT_URL : true, // true cho phép tất cả trong development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}
 app.use(express.static(path.join(__dirname, 'public')))
 app.use(express.json())
 app.use(helmet())
-app.use(cors())
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions))
 app.use(express.urlencoded({ extended: true }))
 
 app.use('/api/auth', authRoutes)
@@ -50,24 +58,9 @@ app.use('/api/search', searchRoutes)
 app.use(defaultErrorHandler)
 
 const server = http.createServer(app)
-
+initSocket(server)
 // Khởi tạo socket trước khi khởi động server
-;(async () => {
-  try {
-    console.log('Initializing Socket.io...')
-    const socketIo = await initSocket(server)
-    app.set('io', socketIo)
-    console.log('Socket.io initialized and stored in app')
-
-    // Khởi động server sau khi socket đã được khởi tạo
-    server.listen(port, () => {
-      console.log(`Server running at http://localhost:${port}`)
-    })
-  } catch (error) {
-    console.error('Failed to initialize Socket.io:', error)
-    // Vẫn khởi động server ngay cả khi socket khởi tạo thất bại
-    server.listen(port, () => {
-      console.log(`Server running at http://localhost:${port} (without Socket.io)`)
-    })
-  }
-})()
+const PORT = process.env.PORT || 3000
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`)
+})

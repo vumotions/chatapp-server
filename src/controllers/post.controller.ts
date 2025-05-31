@@ -59,12 +59,11 @@ class PostController {
       // Build query object
       const query: any = {}
       if (userId) {
-        query.userId = userId // Sử dụng userId theo schema
+        query.userId = userId
       }
 
       if (postTypes) {
         const types = (postTypes as string).split(',')
-        // Only allow private posts if currentUserId matches userId
         if (currentUserId?.toString() !== userId?.toString()) {
           query.post_type = { $in: types.filter((type) => type !== 'private') }
         } else {
@@ -77,63 +76,42 @@ class PostController {
         .sort({ created_at: -1 })
         .skip(skip)
         .limit(limitNumber)
-        .populate('userId', 'name username avatar') // Populate thông tin người dùng
+        .populate('userId', 'name username avatar')
+        .populate({
+          path: 'shared_post',
+          populate: {
+            path: 'userId',
+            select: 'name username avatar'
+          }
+        })
         .lean()
+
+      // Xử lý thêm thông tin cho shared post
+      const postsWithSharedData = posts.map((post) => {
+        if (post.shared_post) {
+          return {
+            ...post,
+            shared_post_data: post.shared_post
+          }
+        }
+        return post
+      })
 
       // Get total count for pagination
       const total = await PostModel.countDocuments(query)
 
-      // Xử lý các bài viết để thêm thông tin bài viết gốc nếu là bài chia sẻ
-      const processedPosts = await Promise.all(
-        posts.map(async (post) => {
-          try {
-            // Đếm số lượt thích
-            const likesCount = await PostLikeModel.countDocuments({ postId: post._id })
-
-            // Kiểm tra người dùng hiện tại đã thích bài viết chưa
-            const userLiked = currentUserId
-              ? await PostLikeModel.exists({ postId: post._id, userId: currentUserId })
-              : false
-
-            // Đếm số bình luận - Sửa lỗi ở đây
-            const commentsCount = await PostCommentModel.countDocuments({ postId: post._id })
-
-            console.log(`Post ${post._id} stats:`, { likesCount, userLiked, commentsCount })
-
-            // Nếu là bài viết chia sẻ, lấy thông tin bài viết gốc
-            let sharedPostData = null
-            if (post.shared_post) {
-              sharedPostData = await PostModel.findById(post.shared_post)
-                .populate('userId', 'name username avatar')
-                .lean()
-            }
-
-            return {
-              ...post,
-              likesCount,
-              commentsCount,
-              userLiked: !!userLiked,
-              shared_post_data: sharedPostData
-            }
-          } catch (error: any) {
-            console.error('Error processing post:', post._id, error)
-            return post
-          }
-        })
-      )
-
+      // Trả về kết quả với định dạng phù hợp cho infinite query
       return res.status(200).json({
         message: 'Get posts successfully',
-        data: processedPosts,
-        pagination: {
-          page: pageNumber,
-          limit: limitNumber,
-          total,
-          totalPages: Math.ceil(total / limitNumber)
+        data: {
+          posts: postsWithSharedData,
+          currentPage: pageNumber,
+          totalPages: Math.ceil(total / limitNumber),
+          hasMore: pageNumber < Math.ceil(total / limitNumber)
         }
       })
     } catch (error: any) {
-      console.error('Error in getPost:', error)
+      console.error('Error in getPosts:', error)
       return res.status(500).json({ message: error.message || 'Internal server error' })
     }
   }

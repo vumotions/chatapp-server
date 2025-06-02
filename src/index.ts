@@ -51,7 +51,6 @@ app.use(defaultErrorHandler)
 
 const server = http.createServer(app)
 initSocket(server)
-// Khởi tạo socket trước khi khởi động server
 
 server.listen(env.PORT, () => {
   console.log(`Server is running on port ${env.PORT}`)

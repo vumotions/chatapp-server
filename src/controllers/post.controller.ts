@@ -8,6 +8,7 @@ import PostCommentModel from '~/models/post-comment.model'
 import PostLikeModel from '~/models/post-like.model'
 import PostModel from '~/models/post.model'
 import uploadService from '~/services/upload.service'
+import { emitSocketEvent } from '~/lib/socket'
 
 class PostController {
   async uploadeAPost(req: Request, res: Response): Promise<any> {
@@ -417,13 +418,12 @@ class PostController {
 
         // Emit socket event for real-time likes
         try {
-          const io = req.app.get('io')
-          if (io) {
-            const roomName = `post:${postId}`
-            io.to(roomName).emit('POST_LIKE_UPDATED', {
-              postId,
-              likesCount
-            })
+          const roomName = `post:${postId}`
+          const emitted = emitSocketEvent(roomName, 'POST_LIKE_UPDATED', {
+            postId,
+            likesCount
+          })
+          if (emitted) {
             console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
           }
         } catch (socketError) {
@@ -457,13 +457,12 @@ class PostController {
 
         // Emit socket event for real-time likes
         try {
-          const io = req.app.get('io')
-          if (io) {
-            const roomName = `post:${postId}`
-            io.to(roomName).emit('POST_LIKE_UPDATED', {
-              postId,
-              likesCount
-            })
+          const roomName = `post:${postId}`
+          const emitted = emitSocketEvent(roomName, 'POST_LIKE_UPDATED', {
+            postId,
+            likesCount
+          })
+          if (emitted) {
             console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
           }
         } catch (socketError) {
@@ -482,11 +481,10 @@ class PostController {
 
             // Emit notification to post author if online
             try {
-              const io = req.app.get('io')
               const { users } = require('~/lib/socket')
               const recipientSocketId = users.get(post.userId?.toString())
-              if (recipientSocketId && io) {
-                io.to(recipientSocketId).emit('NOTIFICATION_NEW', notification)
+              if (recipientSocketId) {
+                emitSocketEvent(recipientSocketId, 'NOTIFICATION_NEW', notification)
               }
             } catch (notifSocketError) {
               console.error('Notification socket error:', notifSocketError)
@@ -533,14 +531,12 @@ class PostController {
 
       // Emit socket event for real-time likes
       try {
-        const io = req.app.get('io')
-        if (io) {
-          // Emit sự kiện POST_LIKE_UPDATED cho post room
-          const roomName = `post:${postId}`
-          io.to(roomName).emit('POST_LIKE_UPDATED', {
-            postId,
-            likesCount
-          })
+        const roomName = `post:${postId}`
+        const emitted = emitSocketEvent(roomName, 'POST_LIKE_UPDATED', {
+          postId,
+          likesCount
+        })
+        if (emitted) {
           console.log(`Emitted POST_LIKE_UPDATED event to room ${roomName}`)
         }
       } catch (socketError) {

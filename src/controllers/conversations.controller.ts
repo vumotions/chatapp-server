@@ -338,7 +338,7 @@ class ConversationsController {
         },
         {
           $set: { status: MESSAGE_STATUS.SEEN },
-          $addToSet: { readBy: userId } // Thêm userId vào mảng readBy nếu chưa có
+          $addToSet: { readBy: userId } // Sử dụng $addToSet thay vì $push để tránh trùng lặp
         }
       )
 
@@ -352,20 +352,16 @@ class ConversationsController {
         .select('_id status readBy')
         .lean()
 
-      // Emit sự kiện MESSAGE_READ để thông báo cho tất cả người dùng trong cuộc trò chuyện
-      const io = req.app.get('io')
-      if (io) {
-        io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_READ, {
-          chatId,
-          messageIds: updatedMessages.map((msg) => msg._id.toString()),
-          readBy: userId,
-          messages: updatedMessages.map((msg) => ({
-            _id: msg._id.toString(),
-            status: msg.status,
-            readBy: Array.isArray(msg.readBy) ? msg.readBy.map((id) => id.toString()) : []
-          }))
-        })
-      }
+      emitSocketEvent(chatId, SOCKET_EVENTS.MESSAGE_READ, {
+        chatId,
+        messageIds: updatedMessages.map((msg) => msg._id.toString()),
+        readBy: userId,
+        messages: updatedMessages.map((msg) => ({
+          _id: msg._id.toString(),
+          status: msg.status,
+          readBy: Array.isArray(msg.readBy) ? msg.readBy.map((id) => id.toString()) : []
+        }))
+      })
 
       res.json(
         new AppSuccess({
@@ -578,12 +574,13 @@ class ConversationsController {
       console.log('Emitting MESSAGE_UPDATED event with data:', eventData)
 
       // Sử dụng hàm helper để gửi sự kiện
-      const io = req.app.get('io')
-      if (io) {
-        io.to(chatId).emit('MESSAGE_UPDATED', eventData)
-        console.log('MESSAGE_UPDATED event emitted successfully')
+      const emitted = emitSocketEvent(chatId, SOCKET_EVENTS.MESSAGE_UPDATED, eventData)
+      if (emitted) {
+        console.log('MESSAGE_UPDATED event emitted to room')
+        console.log('Emitted event:', SOCKET_EVENTS.MESSAGE_UPDATED)
+        console.log('With data:', eventData)
       } else {
-        console.error('Socket.io instance not available')
+        console.error('Failed to emit MESSAGE_UPDATED event')
       }
 
       res.json(
@@ -594,62 +591,6 @@ class ConversationsController {
       )
     } catch (error) {
       console.error('Error updating message:', error)
-      next(error)
-    }
-  }
-
-  // Thêm một endpoint test để kiểm tra socket
-  async testSocket(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { chatId, messageId } = req.body
-
-      if (!chatId || !messageId) {
-        return next(
-          new AppError({
-            status: 400,
-            message: 'Chat ID and Message ID are required'
-          })
-        )
-      }
-
-      console.log(
-        `Testing socket: emitting MESSAGE_DELETED to room ${chatId} for message ${messageId}`
-      )
-
-      // Lấy đối tượng io từ app
-      const io = req.app.get('io')
-
-      if (io) {
-        // Gửi sự kiện đến tất cả clients
-        io.emit(SOCKET_EVENTS.MESSAGE_DELETED, {
-          messageId,
-          chatId
-        })
-
-        // Gửi sự kiện đến room cụ thể
-        io.to(chatId).emit(SOCKET_EVENTS.MESSAGE_DELETED, {
-          messageId,
-          chatId
-        })
-
-        console.log('Test event emitted successfully')
-
-        res.json(
-          new AppSuccess({
-            message: 'Test event emitted successfully',
-            data: { chatId, messageId }
-          })
-        )
-      } else {
-        return next(
-          new AppError({
-            status: 500,
-            message: 'Socket.io instance not available'
-          })
-        )
-      }
-    } catch (error) {
-      console.error('Error in testSocket:', error)
       next(error)
     }
   }
@@ -3826,7 +3767,6 @@ class ConversationsController {
         status: MESSAGE_STATUS.DELIVERED
       })
 
-      // Cập nhật lastMessage thành tin nhắn hệ thống mới
       await ChatModel.findByIdAndUpdate(conversationId, {
         lastMessage: systemMessage._id
       })
@@ -3836,15 +3776,10 @@ class ConversationsController {
         .populate('senderId', 'name avatar')
         .lean()
 
-      // Sử dụng socket để cập nhật real-time
-      const io = req.app.get('io')
-      if (io) {
-        // Emit sự kiện cập nhật lastMessage
-        emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.LAST_MESSAGE_UPDATED, {
-          conversationId,
-          lastMessage: populatedSystemMessage
-        })
-      }
+      emitSocketEvent(conversationId.toString(), SOCKET_EVENTS.LAST_MESSAGE_UPDATED, {
+        conversationId,
+        lastMessage: populatedSystemMessage
+      })
 
       res.json(
         new AppSuccess({

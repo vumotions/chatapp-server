@@ -489,6 +489,9 @@ const initSocket = async (server: HttpServer) => {
           // Chỉ cập nhật nếu người dùng chưa đọc tin nhắn
           if (!message.readBy.includes(userId)) {
             message.readBy.push(userId)
+            
+            // THÊM DÒNG NÀY: Loại bỏ ID trùng lặp trong readBy
+            message.readBy = [...new Set(message.readBy)]
 
             // Đếm số người đã đọc tin nhắn (không tính người gửi)
             const readersCount = message.readBy.filter(

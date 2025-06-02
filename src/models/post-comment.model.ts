@@ -39,14 +39,11 @@ postCommentSchema.index({ postId: 1, createdAt: -1 })
 postCommentSchema.index({ parentId: 1 })
 
 // Thêm pre-save hook để log dữ liệu trước khi lưu
-postCommentSchema.pre('save', function(next) {
-  console.log('Saving comment with data:', this);
-  next();
-});
+postCommentSchema.pre('save', function (next) {
+  console.log('Saving comment with data:', this)
+  next()
+})
 
 const PostCommentModel = model<IPostComment>('PostComment', postCommentSchema)
-
-// Log collection name để kiểm tra
-console.log('PostComment collection name:', PostCommentModel.collection.name);
 
 export default PostCommentModel

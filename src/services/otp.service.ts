@@ -32,8 +32,14 @@ class OTPService {
     user: IUser
     expiresIn?: number
   }) {
+    await OTPModel.deleteMany({
+      email: user.email,
+      purpose
+    })
+
     const otpCode = generateOTP(6)
     const _expiresIn = expiresIn || env.OTP_EXPIRES_AT
+
     const [otpRecord] = await Promise.all([
       OTPModel.create({
         code: otpCode,

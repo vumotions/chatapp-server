@@ -1,5 +1,5 @@
 import cors, { CorsOptions } from 'cors'
-import express from 'express'
+import express, { Request, Response } from 'express'
 import helmet from 'helmet'
 import http from 'http'
 import path from 'path'
@@ -36,6 +36,10 @@ app.use(helmet())
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 app.use(express.urlencoded({ extended: true }))
+
+app.get('/ping', (req, res) => {
+  res.send('Hello world')
+})
 
 app.use('/api/auth', authRoutes)
 app.use('/api/user', userRoutes)

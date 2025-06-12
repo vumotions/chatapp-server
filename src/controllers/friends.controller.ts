@@ -17,6 +17,15 @@ import { AppSuccess } from '~/models/success.model'
 import UserModel, { IUser } from '~/models/User.model'
 import notificationService from '~/services/notification.service'
 
+// Định nghĩa interface cho user suggestion
+interface UserSuggestion {
+  _id: string
+  name: string
+  avatar?: string
+  username?: string
+  [key: string]: any // Cho phép các trường khác
+}
+
 class FriendsController {
   async addFriend(req: Request, res: Response, next: NextFunction) {
     try {
@@ -248,9 +257,6 @@ class FriendsController {
       const page = parseInt(req.query.page as string) || 1
       const limit = parseInt(req.query.limit as string) || 10
 
-      // Tính toán skip cho phân trang
-      const skip = (page - 1) * limit
-
       // Lấy tất cả user đã là bạn
       const friends = await FriendModel.find({ userId }).select('friendId')
       const userFriendIds = friends.map((f) => f.friendId.toString())
@@ -286,26 +292,51 @@ class FriendsController {
         verify: USER_VERIFY_STATUS.VERIFIED
       })
 
-      // Lấy người dùng ưu tiên (bạn của bạn)
-      const priorityUsers = await UserModel.find({
-        _id: { $in: fofIds },
+      // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý
+      const receivedUsers = await UserModel.find({
+        _id: { $in: receivedIds },
         verify: USER_VERIFY_STATUS.VERIFIED
       })
         .select('_id name avatar username')
-        .limit(limit)
         .lean()
 
+      const receivedSuggestions = receivedUsers.map((user) => ({
+        ...user,
+        mutualFriends: 0,
+        status: 'RECEIVED'
+      }))
+
+      // Số lượng gợi ý cần lấy sau khi đã có receivedSuggestions
+      const remainingLimit = limit - receivedSuggestions.length
+
+      // Tính toán skip đúng cho phân trang
+      // Nếu là page 1, không skip bạn của bạn
+      // Nếu là page > 1, skip qua (page-1)*limit người dùng
+      const effectiveSkip = page === 1 ? 0 : (page - 1) * limit
+
+      // Lấy người dùng ưu tiên (bạn của bạn) nếu là page 1
+      let priorityUsers = [] as any[]
+      if (page === 1) {
+        priorityUsers = await UserModel.find({
+          _id: { $in: fofIds },
+          verify: USER_VERIFY_STATUS.VERIFIED
+        })
+          .select('_id name avatar username')
+          .limit(remainingLimit)
+          .lean()
+      }
+
       // Nếu chưa đủ limit, lấy thêm người dùng khác
-      const remainingLimit = limit - priorityUsers.length
+      const remainingForOthers = remainingLimit - priorityUsers.length
       const otherUsers =
-        remainingLimit > 0
+        remainingForOthers > 0
           ? await UserModel.find({
               _id: { $nin: [...excludeIds, ...receivedIds, ...fofIds] },
               verify: USER_VERIFY_STATUS.VERIFIED
             })
               .select('_id name avatar username')
-              .skip(skip)
-              .limit(remainingLimit)
+              .skip(page === 1 ? 0 : effectiveSkip - fofIds.length)
+              .limit(remainingForOthers)
               .lean()
           : []
 
@@ -347,33 +378,19 @@ class FriendsController {
         })
       )
 
-      // Thêm những người đã gửi lời mời cho mình vào danh sách gợi ý, CHỈ LẤY NGƯỜI DÙNG ĐÃ XÁC MINH
-      // Không áp dụng phân trang cho những người đã gửi lời mời, luôn hiển thị họ ở đầu
-      const receivedUsers = await UserModel.find({
-        _id: { $in: receivedIds },
-        verify: USER_VERIFY_STATUS.VERIFIED
-      })
-        .select('_id name avatar username')
-        .lean()
-
-      const receivedSuggestions = receivedUsers.map((user) => ({
-        ...user,
-        mutualFriends: 0,
-        status: 'RECEIVED'
-      }))
-
-      // Kết hợp cả hai danh sách
-      const combinedSuggestions = [...receivedSuggestions, ...suggestions]
+      // Kết hợp cả hai danh sách - chỉ hiển thị receivedSuggestions ở page 1
+      const combinedSuggestions =
+        page === 1 ? [...receivedSuggestions, ...suggestions] : suggestions
 
       res.json(
         new AppSuccess({
           data: {
             suggestions: combinedSuggestions,
             pagination: {
-              total: totalCount + receivedUsers.length,
+              total: totalCount + (page === 1 ? receivedUsers.length : 0),
               page,
               limit,
-              totalPages: Math.ceil((totalCount + receivedUsers.length) / limit)
+              totalPages: Math.ceil(totalCount / limit) + (receivedUsers.length > 0 ? 1 : 0)
             }
           },
           message: 'Lấy danh sách bạn bè gợi ý thành công'
@@ -419,7 +436,9 @@ class FriendsController {
       const searchQuery = (req.query.search as string) || ''
 
       // Lấy danh sách bạn bè
-      const friends = await FriendModel.find({ userId }).populate('friendId', 'name avatar')
+      const friends = await FriendModel.find({ userId })
+        .populate('friendId', '_id name avatar username') // Đảm bảo trường username được chọn
+        .lean()
 
       // Lọc bạn bè theo tìm kiếm nếu có searchQuery
       let filteredFriends = friends.map((f) => f.friendId)
